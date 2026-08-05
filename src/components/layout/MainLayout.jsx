@@ -1,26 +1,86 @@
-import Sidebar from './SideBar.jsx';
+import { useState } from 'react';
+import { Outlet } from 'react-router-dom';
+import { useFiles } from '../../context/FileContext';
+import Sidebar from './SideBar';
+import RightSidebar from './RightSideBar';
+import Header from './Header';
+import FileInfoDrawer from '../file-manager/FileInfoDrawer';
+import ShareModal from '../file-manager/ShareModal';
+import RenameModal from '../file-manager/RenameModal';
+import FilePreviewModal from '../file-manager/FilePreviewModal';
 
-export default function MainLayout({ children }) {
+// Pages are now rendered via react-router-dom <Outlet />
+
+
+export default function MainLayout() {
+    const { 
+        isInfoDrawerOpen, 
+        infoDrawerItem, 
+        infoDrawerTab, 
+        closeInfoDrawer,
+        renameItem,
+        previewItem,
+        closePreview
+    } = useFiles();
+    
+    const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false);
+    const [shareTargetItem, setShareTargetItem] = useState(null);
+    const [renameTargetItem, setRenameTargetItem] = useState(null);
+
     return (
-        <div className="flex h-screen w-full bg-white text-gray-900 font-sans overflow-hidden">
+        <div className="flex h-screen w-full bg-white text-gray-900 font-sans overflow-hidden relative">
+            {/* Sidebar bên trái */}
             <Sidebar />
 
-            {/* Vùng nội dung chính */}
-            <main className="flex-1 flex flex-col bg-white rounded-tl-2xl overflow-hidden shadow-[rgba(0,0,0,0.1)_0px_0px_10px_0px]">
-                {/* Header tạm thời */}
-                <header className="h-16 border-b border-gray-100 flex items-center px-6 bg-white">
-                    <input
-                        type="text"
-                        placeholder="Tìm kiếm trong Drive"
-                        className="w-full max-w-2xl bg-gray-100 border-none rounded-full px-6 py-2 focus:ring-2 focus:ring-blue-100 outline-none"
-                    />
-                </header>
+            {/* Khu vực nội dung chính */}
+            <div className="flex-1 flex flex-col bg-white overflow-hidden min-w-0 border-l border-gray-200">
+                {/* Header Navbar */}
+                <Header 
+                    toggleRightSidebar={() => setIsRightSidebarOpen(!isRightSidebarOpen)} 
+                />
 
-                {/* Vùng render trang con */}
-                <div className="flex-1 overflow-y-auto p-6">
-                    {children}
-                </div>
-            </main>
+                {/* Body Content */}
+                <main className="flex-1 overflow-hidden px-5 py-3">
+                    <Outlet />
+                </main>
+            </div>
+
+            {/* Sidebar thông tin bên phải */}
+            {isRightSidebarOpen && (
+                <RightSidebar isOpen={isRightSidebarOpen} />
+            )}
+
+            {/* Google Drive Info Drawer Panel */}
+            <FileInfoDrawer
+                isOpen={isInfoDrawerOpen}
+                item={infoDrawerItem}
+                activeTab={infoDrawerTab}
+                onClose={closeInfoDrawer}
+                onOpenShare={(item) => setShareTargetItem(item)}
+                onOpenRename={(item) => setRenameTargetItem(item)}
+            />
+
+            {/* Shared Modals if opened from Info Drawer */}
+            <ShareModal
+                isOpen={!!shareTargetItem}
+                item={shareTargetItem}
+                onClose={() => setShareTargetItem(null)}
+            />
+
+            <RenameModal
+                isOpen={!!renameTargetItem}
+                item={renameTargetItem}
+                onClose={() => setRenameTargetItem(null)}
+                onRename={(id, newName) => renameItem(id, newName)}
+            />
+
+            {/* File Preview Modal */}
+            {previewItem && (
+                <FilePreviewModal
+                    item={previewItem}
+                    onClose={closePreview}
+                />
+            )}
         </div>
     );
 }
