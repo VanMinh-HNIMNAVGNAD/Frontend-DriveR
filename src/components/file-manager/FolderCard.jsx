@@ -1,0 +1,70 @@
+import { Folder, MoreVertical, Star, Users } from 'lucide-react';
+
+const folderColorPalettes = [
+    { bg: 'bg-red-50 border-red-200 hover:bg-red-100 hover:border-red-300', text: 'text-red-700', icon: 'text-red-500' },
+    { bg: 'bg-amber-50 border-amber-200 hover:bg-amber-100 hover:border-amber-300', text: 'text-amber-700', icon: 'text-amber-500' },
+    { bg: 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300', text: 'text-emerald-700', icon: 'text-emerald-500' },
+    { bg: 'bg-blue-50 border-blue-200 hover:bg-blue-100 hover:border-blue-300', text: 'text-blue-700', icon: 'text-blue-500' },
+    { bg: 'bg-purple-50 border-purple-200 hover:bg-purple-100 hover:border-purple-300', text: 'text-purple-700', icon: 'text-purple-500' },
+    { bg: 'bg-teal-50 border-teal-200 hover:bg-teal-100 hover:border-teal-300', text: 'text-teal-700', icon: 'text-teal-500' },
+    { bg: 'bg-indigo-50 border-indigo-200 hover:bg-indigo-100 hover:border-indigo-300', text: 'text-indigo-700', icon: 'text-indigo-500' },
+    { bg: 'bg-sky-50 border-sky-200 hover:bg-sky-100 hover:border-sky-300', text: 'text-sky-700', icon: 'text-sky-500' },
+];
+
+function getFolderPalette(name = '') {
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+        hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const index = Math.abs(hash) % folderColorPalettes.length;
+    return folderColorPalettes[index];
+}
+
+export default function FolderCard({ folder, onDoubleClick, onContextMenu, onStarToggle }) {
+    const palette = getFolderPalette(folder?.name);
+    const isSelected = false; // TODO: Implement selection logic (B18)
+
+    return (
+        <div
+            onDoubleClick={() => onDoubleClick && onDoubleClick(folder)}
+            onContextMenu={(e) => onContextMenu && onContextMenu(e, folder)}
+            className={`group relative flex items-center justify-between p-3.5 rounded-2xl cursor-pointer transition-all duration-200 border shadow-sm hover:shadow-md hover:-translate-y-0.5 ${isSelected ? 'ring-2 ring-blue-500 bg-blue-50' : palette.bg}`}
+        >
+            <div className="flex items-center gap-3 min-w-0 pr-2">
+                <div className={`p-2 rounded-xl bg-white/80 shadow-2xs ${palette.icon}`}>
+                    <Folder className="w-5 h-5 fill-current" />
+                </div>
+                <div className="flex flex-col min-w-0">
+                    <span className={`text-sm font-semibold truncate ${palette.text}`} title={folder.name}>
+                        {folder.name}
+                    </span>
+                    {folder.isShared && (
+                        <span className="text-[11px] text-gray-500 flex items-center gap-1">
+                            <Users className="w-3 h-3 text-blue-500" /> Được chia sẻ
+                        </span>
+                    )}
+                </div>
+            </div>
+
+            <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onStarToggle && onStarToggle(folder.id);
+                    }}
+                    className="p-1 text-gray-400 hover:text-amber-500 rounded-full hover:bg-white/60 transition-colors"
+                    title={folder.isStarred ? 'Bỏ đánh dấu sao' : 'Đánh dấu sao'}
+                >
+                    <Star className={`w-4 h-4 ${folder.isStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
+                </button>
+                <button
+                    onClick={(e) => onContextMenu && onContextMenu(e, folder)}
+                    className="p-1 text-gray-500 hover:text-gray-800 rounded-full hover:bg-white/60 transition-colors"
+                    title="Tùy chọn khác"
+                >
+                    <MoreVertical className="w-4 h-4" />
+                </button>
+            </div>
+        </div>
+    );
+}
