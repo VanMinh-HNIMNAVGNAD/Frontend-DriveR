@@ -1,0 +1,136 @@
+import { useState } from 'react';
+import { useFiles } from '../../context/FileContext';
+import { Trash2, HardDrive, X, Sparkles, Check, AlertTriangle, FileText } from 'lucide-react';
+
+export default function QuickCleanupModal({ isOpen, onClose }) {
+  const { items, emptyTrash, deletePermanently, storageInfo } = useFiles();
+  const [isCleaningTrash, setIsCleaningTrash] = useState(false);
+
+  if (!isOpen) return null;
+
+  const trashItems = items.filter((i) => i.isTrash);
+  const trashBytes = trashItems.reduce((acc, curr) => acc + Number(curr.sizeBytes || curr.size || 0), 0);
+  const trashMB = (trashBytes / (1024 * 1024)).toFixed(2);
+
+  // Large files (> 10MB or > 100MB)
+  const largeFiles = items.filter(
+    (i) => !i.isTrash && i.type === 'file' && Number(i.sizeBytes || i.size || 0) > 10 * 1024 * 1024,
+  );
+
+  const handleEmptyTrashNow = async () => {
+    try {
+      setIsCleaningTrash(true);
+      await emptyTrash();
+      alert('🎉 Đã dọn dẹp sạch Thùng rác! Thu hồi bộ nhớ thành công.');
+    } catch (err) {
+      alert('Lỗi dọn thùng rác: ' + err.message);
+    } finally {
+      setIsCleaningTrash(false);
+    }
+  };
+
+  const handleDeleteLargeFile = async (id, name) => {
+    if (confirm(`Bạn có chắc muốn xóa vĩnh viễn tệp lớn "${name}"?`)) {
+      await deletePermanently(id);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-6 space-y-6 relative border border-gray-100 animate-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={onClose}
+          className="absolute right-4 top-4 text-gray-400 hover:text-gray-600 p-1.5 rounded-full hover:bg-gray-100 transition-colors"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
+            <Sparkles className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-gray-900">Dọn dẹp bộ nhớ thông minh</h3>
+            <p className="text-xs text-gray-500">Gợi ý thu hồi bộ nhớ tức thì để giải phóng dung lượng</p>
+          </div>
+        </div>
+
+        {/* Suggestion 1: Empty Trash */}
+        <div className="p-4 rounded-2xl border border-amber-200 bg-amber-50/50 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <Trash2 className="w-5 h-5 text-amber-600" />
+              <div>
+                <div className="text-xs font-bold text-gray-900">Dọn sạch Thùng rác ({trashItems.length} tệp)</div>
+                <div className="text-[11px] text-gray-500">Có thể thu hồi ngay {trashMB} MB</div>
+              </div>
+            </div>
+            <button
+              onClick={handleEmptyTrashNow}
+              disabled={isCleaningTrash || trashItems.length === 0}
+              className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl transition-colors disabled:opacity-50"
+            >
+              {isCleaningTrash ? 'Đang dọn...' : 'Dọn ngay'}
+            </button>
+          </div>
+        </div>
+
+        {/* Suggestion 2: Large Files */}
+        <div className="space-y-3">
+          <h4 className="text-xs font-bold text-gray-900 uppercase tracking-wider flex items-center justify-between">
+            <span>Các tệp dung lượng lớn ({largeFiles.length})</span>
+            <span className="text-[11px] font-semibold text-gray-500">{'>'} 10 MB</span>
+          </h4>
+
+          {largeFiles.length === 0 ? (
+            <div className="p-4 text-center border border-dashed border-gray-200 rounded-2xl text-xs text-gray-500">
+              🎉 Bạn chưa có tệp lớn nào vượt quá 10MB!
+            </div>
+          ) : (
+            <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+              {largeFiles.map((file) => {
+                const mb = (Number(file.sizeBytes || file.size || 0) / (1024 * 1024)).toFixed(1);
+                return (
+                  <div
+                    key={file.id}
+                    className="flex items-center justify-between p-3 border border-gray-200 rounded-xl text-xs hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-2">
+                      <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+                      <span className="truncate font-semibold text-gray-900">{file.name}</span>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="font-bold text-amber-600 font-mono">{mb} MB</span>
+                      <button
+                        onClick={() => handleDeleteLargeFile(file.id, file.name)}
+                        className="text-gray-400 hover:text-red-600 p-1 rounded-md transition-colors"
+                        title="Xóa tệp lớn này"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="pt-2 border-t border-gray-100 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-5 py-2 text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors"
+          >
+            Đóng
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
