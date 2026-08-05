@@ -1,0 +1,106 @@
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
+import { User as UserIcon, LogOut, ShieldCheck } from 'lucide-react';
+import UserProfileModal from '../modals/UserProfileModal';
+
+export default function AccountModal({ isOpen, onClose }) {
+    const { user, logout } = useAuth();
+    const navigate = useNavigate();
+    const modalRef = useRef(null);
+    const [isProfileOpen, setIsProfileOpen] = useState(false);
+
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (modalRef.current && !modalRef.current.contains(e.target)) {
+                onClose && onClose();
+            }
+        };
+
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape' && isOpen) {
+                onClose && onClose();
+            }
+        };
+
+        if (isOpen) {
+            document.addEventListener('mousedown', handleClickOutside);
+            window.addEventListener('keydown', handleKeyDown);
+        }
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [isOpen, onClose, isProfileOpen]);
+
+    if (!isOpen) return null;
+
+    const handleLogout = () => {
+        logout();
+        onClose && onClose();
+        navigate('/login');
+    };
+
+    const getProviderBadge = (provider) => {
+        if (provider === 'google') return 'Google';
+        if (provider === 'github') return 'GitHub';
+        return 'driveR';
+    };
+
+    const initialLetter = (user?.fullName || user?.email || 'U').charAt(0).toUpperCase();
+
+    return (
+        <div 
+            ref={modalRef}
+            className="absolute top-full right-0 mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-gray-200 p-5 z-50 animate-in fade-in zoom-in-95 duration-150 text-gray-800 text-left cursor-default"
+        >
+            {/* User Details */}
+            <div className="flex items-center gap-3 pb-4 border-b border-gray-100">
+                {user?.avatarUrl ? (
+                    <img src={user.avatarUrl} alt="Avatar" className="w-12 h-12 rounded-full object-cover shadow-sm border border-gray-200" />
+                ) : (
+                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center font-bold text-lg shadow-sm">
+                        {initialLetter}
+                    </div>
+                )}
+                <div className="flex-1 min-w-0">
+                    <h4 className="font-semibold text-gray-900 truncate">{user?.fullName || 'Người dùng driveR'}</h4>
+                    <p className="text-xs text-gray-500 truncate">{user?.email || 'user@driver.com'}</p>
+                    <span className="inline-flex items-center gap-1 mt-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+                        <ShieldCheck className="w-3 h-3" /> Tài khoản {getProviderBadge(user?.provider)}
+                    </span>
+                </div>
+            </div>
+
+            {/* Menu Options */}
+            <div className="pt-2 space-y-1">
+                <button
+                    onClick={() => {
+                        setIsProfileOpen(true);
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-xl transition-colors text-left cursor-pointer"
+                >
+                    <UserIcon className="w-4 h-4 text-gray-500" />
+                    Tài khoản của tôi
+                </button>
+                <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-sm text-rose-600 hover:bg-rose-50 rounded-xl transition-colors text-left font-medium cursor-pointer"
+                >
+                    <LogOut className="w-4 h-4 text-rose-600" />
+                    Đăng xuất
+                </button>
+            </div>
+
+            {/* Profile Modal */}
+            <UserProfileModal
+                isOpen={isProfileOpen}
+                onClose={() => {
+                    setIsProfileOpen(false);
+                    onClose && onClose();
+                }}
+            />
+        </div>
+    );
+}
