@@ -1,0 +1,219 @@
+import { useState } from 'react';
+import { useFiles } from '../../context/FileContext';
+import FileSkeleton from '../common/FileSkeleton';
+import FolderCard from './FolderCard';
+import FileCard from './FileCard';
+import ContextMenu from './ContextMenu';
+import RenameModal from './RenameModal';
+import ShareModal from './ShareModal';
+import GeminiModal from './GeminiModal';
+import { Folder, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
+
+export default function FileGridView() {
+    const { 
+        folders, 
+        files, 
+        currentFilteredItems, 
+        openFolder, 
+        toggleStar, 
+        moveToTrash,
+        restoreFromTrash,
+        deletePermanently,
+        renameItem,
+        openInfoDrawer,
+        openPreview,
+        getDownloadUrl,
+        activeTab,
+        isLoading,
+        currentPage,
+        setCurrentPage,
+        pageSize,
+        totalItems,
+        totalPages
+    } = useFiles();
+
+    // Context menu state
+    const [contextMenu, setContextMenu] = useState({ isOpen: false, x: 0, y: 0, item: null });
+
+    // Modals state
+    const [renameItemTarget, setRenameItemTarget] = useState(null);
+    const [shareItemTarget, setShareItemTarget] = useState(null);
+    const [geminiItemTarget, setGeminiItemTarget] = useState(null);
+
+    const openContextMenu = (e, item) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setContextMenu({
+            isOpen: true,
+            x: e.clientX,
+            y: e.clientY,
+            item
+        });
+    };
+
+    const closeContextMenu = () => {
+        setContextMenu({ isOpen: false, x: 0, y: 0, item: null });
+    };
+
+    const handleItemDoubleClick = (item) => {
+        if (item.type === 'folder' && !item.isTrash && !item.isSpam) {
+            openFolder(item);
+        } else {
+            openPreview(item);
+        }
+    };
+
+    const handleDownloadItem = async (item) => {
+        try {
+            if (item.type === 'folder') {
+                alert('Đang tạo liên kết tải xuống thư mục dạng ZIP...');
+                return;
+            }
+            const url = await getDownloadUrl(item.id);
+            if (url) {
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = item.name;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+        } catch (error) {
+            console.error('Lỗi khi tải xuống:', error);
+        }
+    };
+
+    if (isLoading) {
+        return <FileSkeleton type="grid" count={10} />;
+    }
+
+    if (!currentFilteredItems || currentFilteredItems.length === 0) {
+        return (
+            <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-3 text-gray-300">
+                    <Folder className="w-8 h-8" />
+                </div>
+                <p className="text-base font-medium text-gray-600">Thư mục này chưa có tệp hoặc thư mục nào</p>
+                <p className="text-xs text-gray-400 mt-1">Kéo thả tệp vào đây hoặc nhấn nút "+ Mới" để bắt đầu</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="flex flex-col h-full justify-between pb-4 select-none">
+            <div className="space-y-6 overflow-y-auto pr-1">
+                {/* Section 1: Thư mục (Folders) */}
+                {folders && folders.length > 0 && (
+                    <div>
+                        <div className="flex items-center gap-2 mb-3 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                            <Folder className="w-4 h-4 text-amber-500" />
+                            <span>Thư mục ({folders.length})</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3.5">
+                            {folders.map((folder) => (
+                                <FolderCard
+                                    key={folder.id}
+                                    folder={folder}
+                                    onDoubleClick={handleItemDoubleClick}
+                                    onContextMenu={openContextMenu}
+                                    onStarToggle={toggleStar}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Section 2: Tệp (Files) */}
+                {files && files.length > 0 && (
+                    <div>
+                        <div className="flex items-center gap-2 mb-3 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                            <FileText className="w-4 h-4 text-blue-500" />
+                            <span>Tệp ({files.length})</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                            {files.map((file) => (
+                                <FileCard
+                                    key={file.id}
+                                    file={file}
+                                    onDoubleClick={handleItemDoubleClick}
+                                    onContextMenu={openContextMenu}
+                                    onStarToggle={toggleStar}
+                                    onOpenInfo={openInfoDrawer}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+                <div className="flex items-center justify-between pt-4 border-t border-gray-100 text-xs text-gray-500">
+                    <div>
+                        Hiển thị <span className="font-semibold text-gray-700">{((currentPage - 1) * pageSize) + 1}</span> - <span className="font-semibold text-gray-700">{Math.min(currentPage * pageSize, totalItems)}</span> trong <span className="font-semibold text-gray-700">{totalItems}</span> mục
+                    </div>
+                    <div className="flex items-center gap-1">
+                        <button
+                            disabled={currentPage === 1}
+                            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                            className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+                        >
+                            <ChevronLeft className="w-4 h-4" />
+                        </button>
+                        <span className="px-2 font-medium">
+                            Trang {currentPage} / {totalPages}
+                        </span>
+                        <button
+                            disabled={currentPage === totalPages}
+                            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                            className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+                        >
+                            <ChevronRight className="w-4 h-4" />
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Context Menu floating */}
+            <ContextMenu
+                isOpen={contextMenu.isOpen}
+                x={contextMenu.x}
+                y={contextMenu.y}
+                item={contextMenu.item}
+                isTrashTab={activeTab === 'trash'}
+                activeTab={activeTab}
+                onClose={closeContextMenu}
+                onPreview={(item) => openPreview(item)}
+                onDownload={handleDownloadItem}
+                onRename={(item) => setRenameItemTarget(item)}
+                onShare={(item) => setShareItemTarget(item)}
+                onGemini={(item) => setGeminiItemTarget(item)}
+                onToggleStar={(item) => toggleStar(item.id)}
+                onMoveToTrash={(item) => moveToTrash(item.id)}
+                onRestore={(item) => restoreFromTrash(item.id)}
+                onDeletePermanently={(item) => deletePermanently(item.id)}
+                onShowInfo={(item, tab) => openInfoDrawer(item, tab)}
+            />
+
+            {/* Modals */}
+            <RenameModal
+                isOpen={!!renameItemTarget}
+                item={renameItemTarget}
+                onClose={() => setRenameItemTarget(null)}
+                onRename={(id, newName) => renameItem(id, newName)}
+            />
+
+            <ShareModal
+                isOpen={!!shareItemTarget}
+                item={shareItemTarget}
+                onClose={() => setShareItemTarget(null)}
+            />
+
+            <GeminiModal
+                isOpen={!!geminiItemTarget}
+                item={geminiItemTarget}
+                onClose={() => setGeminiItemTarget(null)}
+            />
+        </div>
+    );
+}
