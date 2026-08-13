@@ -211,7 +211,13 @@ export default function FileInfoDrawer({ isOpen, item, activeTab = 'details', on
                                         </button>
                                     )}
                                     <button
-                                        onClick={() => onOpenShare?.(item)}
+                                        onClick={(e) => { 
+                                            e.stopPropagation();
+                                            e.preventDefault();
+                                            const currentItem = item;
+                                            onClose?.(); 
+                                            setTimeout(() => onOpenShare?.(currentItem), 50);
+                                        }}
                                         className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold flex items-center gap-1 shadow-xs transition-all cursor-pointer"
                                     >
                                         <Share2 className="w-3.5 h-3.5" /> Quản lý
