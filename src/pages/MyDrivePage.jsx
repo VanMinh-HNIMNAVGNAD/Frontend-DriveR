@@ -4,6 +4,7 @@ import FileListView from '../components/file-manager/FileListView';
 import FileGridView from '../components/file-manager/FileGridView';
 import FileFilterBar from '../components/common/FileFilterBar';
 import UploadProgress from '../components/file-manager/UploadProgress';
+import Breadcrumb from '../components/file-manager/Breadcrumb';
 import { List, LayoutGrid, ChevronRight, UploadCloud } from 'lucide-react';
 
 export default function MyDrivePage() {
@@ -17,13 +18,15 @@ export default function MyDrivePage() {
     setFilterType,
     filterDate,
     setFilterDate,
-    filterSender,
-    setFilterSender,
+    filterOwner,
+    setFilterOwner,
     resetFilters,
     uploadFile,
     uploadQueue,
     setUploadQueue,
     retryUploadJob,
+    breadcrumb,
+    openFolder,
   } = useFiles();
 
 
@@ -91,21 +94,8 @@ export default function MyDrivePage() {
 
       {/* Header Toolbar */}
       <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-100">
-        {/* Breadcrumb Navigation */}
-        <div className="flex items-center gap-2 text-gray-700 text-lg font-semibold">
-          <button
-            onClick={() => setCurrentFolderId(null)}
-            className="hover:text-blue-600 transition-colors flex items-center gap-1.5"
-          >
-            <span>Driver riêng của tôi</span>
-          </button>
-
-          {currentFolder && (
-            <>
-              <ChevronRight className="w-4 h-4 text-gray-400" />
-              <span className="text-gray-900 font-bold">{currentFolder.name}</span>
-            </>
-          )}
+        <div className="flex-1 min-w-0">
+          <Breadcrumb path={breadcrumb} onNavigate={(id) => openFolder({ id })} />
         </div>
 
         {/* Action Buttons & View Switcher */}
@@ -151,8 +141,8 @@ export default function MyDrivePage() {
         setFilterType={setFilterType}
         filterDate={filterDate}
         setFilterDate={setFilterDate}
-        filterSender={filterSender}
-        setFilterSender={setFilterSender}
+        filterOwner={filterOwner}
+        setFilterOwner={setFilterOwner}
         onReset={resetFilters}
       />
 
