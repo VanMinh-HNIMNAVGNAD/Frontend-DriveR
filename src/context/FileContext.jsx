@@ -62,10 +62,9 @@ export function FileProvider({ children }) {
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearch = useDebounce(searchQuery, 400); // B8: chỉ gọi API sau 400ms idle
   const [filterType, setFilterType] = useState('all');
+  const [filterDate, setFilterDate] = useState('all');
   const [filterOwner, setFilterOwner] = useState('all');
   const [filterLocation, setFilterLocation] = useState('all');
-  const [filterDate, setFilterDate] = useState('all');
-  const [filterSender, setFilterSender] = useState('all');
 
   // Sorting
   const [sortField, setSortField] = useState('name'); // 'name' | 'size' | 'type' | 'owner' | 'group' | 'updatedAt' | 'createdAt'
@@ -173,7 +172,7 @@ export function FileProvider({ children }) {
         search: debouncedSearch || undefined,
         filterType: filterType !== 'all' ? filterType : undefined,
         filterDate: filterDate !== 'all' ? filterDate : undefined,
-        filterSender: filterSender !== 'all' ? filterSender : undefined,
+        filterSender: filterOwner !== 'all' ? filterOwner : undefined,
         page: currentPage,
         limit: pageSize,
       });
@@ -202,7 +201,7 @@ export function FileProvider({ children }) {
     } finally {
       setIsLoading(false);
     }
-  }, [isAuthenticated, isAuthLoading, activeTab, currentFolderId, debouncedSearch, filterType, filterDate, filterSender, currentPage, pageSize]);
+  }, [isAuthenticated, isAuthLoading, activeTab, currentFolderId, debouncedSearch, filterType, filterDate, filterOwner, currentPage, pageSize]);
 
   useEffect(() => {
     fetchFiles();
@@ -212,7 +211,6 @@ export function FileProvider({ children }) {
   const resetFilters = () => {
     setFilterType('all');
     setFilterDate('all');
-    setFilterSender('all');
     setFilterOwner('all');
     setFilterLocation('all');
     setSearchQuery('');
@@ -769,8 +767,6 @@ export function FileProvider({ children }) {
         setFilterType,
         filterDate,
         setFilterDate,
-        filterSender,
-        setFilterSender,
         sortField,
         setSortField,
         sortDirection,

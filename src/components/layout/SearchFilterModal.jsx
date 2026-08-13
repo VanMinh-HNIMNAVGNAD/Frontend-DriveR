@@ -90,7 +90,8 @@ export default function SearchFilterModal({ isOpen, onClose }) {
                     >
                         <option value="all">Bất kỳ đâu trong driveR</option>
                         <option value="my-drive">Driver riêng của tôi</option>
-                        <option value="shared">Driver đã chia sẻ</option>
+                        <option value="shared-with-me">Được chia sẻ với tôi</option>
+                        <option value="shared-drives">Driver đã chia sẻ</option>
                         <option value="spam">Nội dung rác</option>
                         <option value="trash">Thùng rác</option>
                     </select>
@@ -107,7 +108,12 @@ export default function SearchFilterModal({ isOpen, onClose }) {
                 </button>
                 <button
                     type="button"
-                    onClick={onClose}
+                    onClick={() => {
+                        if (filterLocation !== 'all') {
+                            window.location.href = `/app/${filterLocation}`;
+                        }
+                        onClose();
+                    }}
                     className="px-5 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-full shadow-sm transition-colors cursor-pointer"
                 >
                     Áp dụng bộ lọc

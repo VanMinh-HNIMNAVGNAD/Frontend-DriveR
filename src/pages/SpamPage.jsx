@@ -14,8 +14,8 @@ export default function SpamPage() {
         setFilterType, 
         filterDate, 
         setFilterDate, 
-        filterSender, 
-        setFilterSender, 
+        filterOwner, 
+        setFilterOwner, 
         uniqueOwners, 
         resetFilters 
     } = useFiles();
@@ -75,8 +75,8 @@ export default function SpamPage() {
                 setFilterType={setFilterType}
                 filterDate={filterDate}
                 setFilterDate={setFilterDate}
-                filterSender={filterSender}
-                setFilterSender={setFilterSender}
+                filterOwner={filterOwner}
+                setFilterOwner={setFilterOwner}
                 uniqueOwners={uniqueOwners}
                 onReset={resetFilters}
             />

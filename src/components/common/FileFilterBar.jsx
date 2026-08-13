@@ -24,8 +24,8 @@ export default function FileFilterBar({
     setFilterType,
     filterDate = 'all',
     setFilterDate,
-    filterSender = 'all',
-    setFilterSender,
+    filterOwner = 'all',
+    setFilterOwner,
     uniqueOwners = [],
     onReset
 }) {
@@ -54,7 +54,7 @@ export default function FileFilterBar({
     ];
 
     // Sender / Owner Options
-    const senderOptions = [
+    const ownerOptions = [
         { value: 'all', label: 'Bất kỳ ai' },
         { value: 'me', label: 'Tôi sở hữu' },
         { value: 'others', label: 'Được chia sẻ bởi người khác' },
@@ -66,7 +66,7 @@ export default function FileFilterBar({
             }))
     ];
 
-    const hasActiveFilters = filterType !== 'all' || filterDate !== 'all' || filterSender !== 'all';
+    const hasActiveFilters = filterType !== 'all' || filterDate !== 'all' || filterOwner !== 'all';
 
     const sortOptions = [
         { value: 'name-asc', label: 'Tên (A-Z)' },
@@ -121,10 +121,10 @@ export default function FileFilterBar({
             <SelectDropdown
                 label="Người gửi / Sở hữu"
                 icon={User}
-                options={senderOptions}
-                value={filterSender}
-                onChange={setFilterSender}
-                active={filterSender !== 'all'}
+                options={ownerOptions}
+                value={filterOwner}
+                onChange={setFilterOwner}
+                active={filterOwner !== 'all'}
             />
 
             {/* Quick Reset Filters Button */}
