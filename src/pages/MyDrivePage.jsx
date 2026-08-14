@@ -1,11 +1,12 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useFiles } from '../context/FileContext';
+import { useUpload } from '../context/UploadContext';
 import FileListView from '../components/file-manager/FileListView';
 import FileGridView from '../components/file-manager/FileGridView';
 import FileFilterBar from '../components/common/FileFilterBar';
 import UploadProgress from '../components/file-manager/UploadProgress';
 import Breadcrumb from '../components/file-manager/Breadcrumb';
-import { List, LayoutGrid, ChevronRight, UploadCloud } from 'lucide-react';
+import { List, LayoutGrid, ChevronRight, UploadCloud, FolderInput, Loader2 } from 'lucide-react';
 
 export default function MyDrivePage() {
   const {
@@ -23,11 +24,20 @@ export default function MyDrivePage() {
     resetFilters,
     uploadFile,
     uploadQueue,
-    setUploadQueue,
     retryUploadJob,
     breadcrumb,
     openFolder,
+    clipboard,
+    isPasting,
+    pasteItems,
   } = useFiles();
+
+  // Subscribe trực tiếp vào UploadContext để lấy removeJob (stable callback, không tạo inline)
+  const { removeJob } = useUpload();
+
+  // Stable callbacks — không phá memo của UploadProgress/FileJobRow
+  const handleDismissError = useCallback((id) => removeJob(id), [removeJob]);
+  const handleRetry = useCallback((id) => retryUploadJob(id), [retryUploadJob]);
 
 
 
@@ -100,9 +110,25 @@ export default function MyDrivePage() {
 
         {/* Action Buttons & View Switcher */}
         <div className="flex items-center gap-2">
+          {clipboard?.items?.length > 0 && (
+            <button
+              disabled={isPasting}
+              onClick={() => pasteItems()}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-full text-xs font-bold shadow-xs transition-colors cursor-pointer"
+              title={`Dán ${clipboard.items.length} mục vào thư mục này (Ctrl+V)`}
+            >
+              {isPasting ? (
+                <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+              ) : (
+                <FolderInput className="w-4 h-4 text-blue-600" />
+              )}
+              <span>Dán ({clipboard.items.length})</span>
+            </button>
+          )}
+
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full text-xs font-bold shadow-xs transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full text-xs font-bold shadow-xs transition-colors cursor-pointer"
           >
             <UploadCloud className="w-4 h-4" />
             <span>Tải tệp lên</span>
@@ -112,22 +138,20 @@ export default function MyDrivePage() {
             <button
               onClick={() => setViewMode('list')}
               title="Xem dạng danh sách"
-              className={`p-1.5 rounded-full transition-colors ${
-                viewMode === 'list'
+              className={`p-1.5 rounded-full transition-colors ${viewMode === 'list'
                   ? 'bg-white shadow-xs text-blue-600 font-medium'
                   : 'text-gray-500 hover:text-gray-800'
-              }`}
+                }`}
             >
               <List className="w-4 h-4" />
             </button>
             <button
               onClick={() => setViewMode('grid')}
               title="Xem dạng lưới"
-              className={`p-1.5 rounded-full transition-colors ${
-                viewMode === 'grid'
+              className={`p-1.5 rounded-full transition-colors ${viewMode === 'grid'
                   ? 'bg-white shadow-xs text-blue-600 font-medium'
                   : 'text-gray-500 hover:text-gray-800'
-              }`}
+                }`}
             >
               <LayoutGrid className="w-4 h-4" />
             </button>
@@ -154,10 +178,8 @@ export default function MyDrivePage() {
       {/* Upload Progress — floating bottom-right, multi-file */}
       <UploadProgress
         queue={uploadQueue}
-        onDismissError={(id) =>
-          setUploadQueue?.((prev) => prev.filter((j) => j.id !== id))
-        }
-        onRetry={(id) => retryUploadJob(id)}
+        onDismissError={handleDismissError}
+        onRetry={handleRetry}
       />
     </div>
   );

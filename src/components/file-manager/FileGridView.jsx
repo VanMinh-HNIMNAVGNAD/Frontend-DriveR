@@ -29,8 +29,20 @@ export default function FileGridView() {
         setCurrentPage,
         pageSize,
         totalItems,
-        totalPages
+        totalPages,
+        // Selection
+        selectedIds,
+        isSelected,
+        toggleSelect,
+        selectRange,
+        // Clipboard
+        clipboard,
+        isPasting,
+        cutItems,
+        copyItems,
+        pasteItems,
     } = useFiles();
+
 
     // Context menu state
     const [contextMenu, setContextMenu] = useState({ isOpen: false, x: 0, y: 0, item: null });
@@ -117,6 +129,10 @@ export default function FileGridView() {
                                     onDoubleClick={handleItemDoubleClick}
                                     onContextMenu={openContextMenu}
                                     onStarToggle={toggleStar}
+                                    isSelected={isSelected(folder.id)}
+                                    isCut={clipboard.mode === 'cut' && clipboard.items.some((e) => e.id === folder.id)}
+                                    onToggleSelect={toggleSelect}
+                                    onSelectRange={(id) => selectRange(id, folders, files)}
                                 />
                             ))}
                         </div>
@@ -139,6 +155,10 @@ export default function FileGridView() {
                                     onContextMenu={openContextMenu}
                                     onStarToggle={toggleStar}
                                     onOpenInfo={openInfoDrawer}
+                                    isSelected={isSelected(file.id)}
+                                    isCut={clipboard.mode === 'cut' && clipboard.items.some((e) => e.id === file.id)}
+                                    onToggleSelect={toggleSelect}
+                                    onSelectRange={(id) => selectRange(id, folders, files)}
                                 />
                             ))}
                         </div>
@@ -186,6 +206,23 @@ export default function FileGridView() {
                 onPreview={(item) => openPreview(item)}
                 onDownload={handleDownloadItem}
                 onRename={(item) => setRenameItemTarget(item)}
+                onCut={(targetItem) => {
+                    if (selectedIds.has(targetItem.id) && selectedIds.size > 1) {
+                        cutItems(Array.from(selectedIds));
+                    } else {
+                        cutItems([targetItem.id]);
+                    }
+                }}
+                onCopy={(targetItem) => {
+                    if (selectedIds.has(targetItem.id) && selectedIds.size > 1) {
+                        copyItems(Array.from(selectedIds));
+                    } else {
+                        copyItems([targetItem.id]);
+                    }
+                }}
+                onPaste={(targetParentId) => pasteItems(targetParentId)}
+                canPaste={clipboard.items.length > 0}
+                isPasting={isPasting}
                 onShare={(item) => setShareItemTarget(item)}
                 onGemini={(item) => setGeminiItemTarget(item)}
                 onToggleStar={(item) => toggleStar(item.id)}

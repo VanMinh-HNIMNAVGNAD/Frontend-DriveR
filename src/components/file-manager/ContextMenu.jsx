@@ -17,7 +17,8 @@ import {
     RotateCcw,
     ShieldAlert,
     Eye,
-    Scissors
+    Scissors,
+    Loader2
 } from 'lucide-react';
 
 export default function ContextMenu({ 
@@ -29,6 +30,11 @@ export default function ContextMenu({
     onClose, 
     onPreview,
     onRename, 
+    onCut,
+    onCopy,
+    onPaste,
+    canPaste = false,
+    isPasting = false,
     onShare, 
     onGemini, 
     onDownload, 
@@ -80,7 +86,7 @@ export default function ContextMenu({
     return (
         <div
             ref={menuRef}
-            className="fixed z-50 w-64 bg-[#282a2c] text-gray-200 rounded-2xl shadow-2xl py-2 border border-gray-700/80 text-[13px] font-sans select-none animate-fade-in"
+            className="fixed z-50 w-64 bg-[#282a2c]/90 backdrop-blur-md text-gray-200 rounded-2xl shadow-2xl py-2 border border-gray-700/80 text-[13px] font-sans select-none animate-fade-in"
             style={{ top: pos.top, left: pos.left }}
             onClick={(e) => e.stopPropagation()}
         >
@@ -153,6 +159,55 @@ export default function ContextMenu({
                         </div>
                     </button>
 
+                    {/* Separator: Clipboard Actions */}
+                    <div className="h-px bg-gray-700/60 my-1"></div>
+
+                    {/* Cắt */}
+                    <button
+                        onClick={() => { onCut?.(item); onClose(); }}
+                        className="w-full px-4 py-2 hover:bg-[#37393b] cursor-pointer flex items-center justify-between text-gray-200 transition-colors"
+                    >
+                        <div className="flex items-center gap-3">
+                            <Scissors className="w-4 h-4 text-gray-300 shrink-0" />
+                            <span>Cắt</span>
+                        </div>
+                        <span className="text-[11px] text-gray-400 font-mono">Ctrl+X</span>
+                    </button>
+
+                    {/* Sao chép */}
+                    <button
+                        onClick={() => { onCopy?.(item); onClose(); }}
+                        className="w-full px-4 py-2 hover:bg-[#37393b] cursor-pointer flex items-center justify-between text-gray-200 transition-colors"
+                    >
+                        <div className="flex items-center gap-3">
+                            <Copy className="w-4 h-4 text-gray-300 shrink-0" />
+                            <span>Sao chép</span>
+                        </div>
+                        <span className="text-[11px] text-gray-400 font-mono">Ctrl+C</span>
+                    </button>
+
+                    {/* Dán (Chỉ hiển thị khi có item trong clipboard) */}
+                    {canPaste && (
+                        <button
+                            disabled={isPasting}
+                            onClick={() => { 
+                                onPaste?.(isFolder ? item.id : undefined); 
+                                onClose(); 
+                            }}
+                            className="w-full px-4 py-2 hover:bg-[#37393b] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-between text-blue-300 hover:text-blue-200 transition-colors font-medium"
+                        >
+                            <div className="flex items-center gap-3">
+                                {isPasting ? (
+                                    <Loader2 className="w-4 h-4 text-blue-400 animate-spin shrink-0" />
+                                ) : (
+                                    <FolderInput className="w-4 h-4 text-blue-400 shrink-0" />
+                                )}
+                                <span>{isFolder ? 'Dán vào thư mục này' : 'Dán'}</span>
+                            </div>
+                            <span className="text-[11px] text-gray-400 font-mono">Ctrl+V</span>
+                        </button>
+                    )}
+
                     {/* Separator 1 */}
                     <div className="h-px bg-gray-700/60 my-1"></div>
 
@@ -187,7 +242,7 @@ export default function ContextMenu({
 
                         {/* Share Submenu */}
                         {activeSubmenu === 'share' && (
-                            <div className="absolute left-full top-0 ml-1 w-48 bg-[#282a2c] text-gray-200 rounded-xl shadow-xl py-1.5 border border-gray-700/80 z-50 text-[13px]">
+                            <div className="absolute left-full top-0 ml-1 w-48 bg-[#282a2c]/90 backdrop-blur-md text-gray-200 rounded-xl shadow-xl py-1.5 border border-gray-700/80 z-50 text-[13px]">
                                 <button
                                     onClick={() => { onShare?.(item); onClose(); }}
                                     className="w-full px-4 py-2 hover:bg-[#37393b] flex items-center gap-2 text-left"
@@ -197,7 +252,7 @@ export default function ContextMenu({
                                 </button>
                                 <button
                                     onClick={() => { 
-                                        navigator.clipboard.writeText(`https://driver.app/s/${item.id}`);
+                                        navigator.clipboard.writeText(`${window.location.origin}/s/${item.id}`);
                                         alert('Đã sao chép đường liên kết!');
                                         onClose(); 
                                     }}
@@ -205,50 +260,6 @@ export default function ContextMenu({
                                 >
                                     <Copy className="w-4 h-4 text-gray-300" />
                                     <span>Sao chép đường liên kết</span>
-                                </button>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* 5. Sắp xếp (With Submenu) */}
-                    <div 
-                        className="relative"
-                        onMouseEnter={() => setActiveSubmenu('organize')}
-                        onMouseLeave={() => setActiveSubmenu(null)}
-                    >
-                        <button
-                            className="w-full px-4 py-2 hover:bg-[#37393b] cursor-pointer flex items-center justify-between text-gray-200 transition-colors"
-                        >
-                            <div className="flex items-center gap-3">
-                                <FolderPlus className="w-4 h-4 text-gray-300 shrink-0" />
-                                <span>Sắp xếp</span>
-                            </div>
-                            <ChevronRight className="w-4 h-4 text-gray-400" />
-                        </button>
-
-                        {/* Organize Submenu */}
-                        {activeSubmenu === 'organize' && (
-                            <div className="absolute left-full top-0 ml-1 w-52 bg-[#282a2c] text-gray-200 rounded-xl shadow-xl py-1.5 border border-gray-700/80 z-50 text-[13px]">
-                                <button
-                                    onClick={() => { alert('Tính năng Copy đang được phát triển'); onClose(); }}
-                                    className="w-full px-4 py-2 hover:bg-[#37393b] flex items-center gap-2 text-left"
-                                >
-                                    <Copy className="w-4 h-4 text-gray-300" />
-                                    <span>Copy</span>
-                                </button>
-                                <button
-                                    onClick={() => { alert('Tính năng Cut đang được phát triển'); onClose(); }}
-                                    className="w-full px-4 py-2 hover:bg-[#37393b] flex items-center gap-2 text-left"
-                                >
-                                    <Scissors className="w-4 h-4 text-gray-300" />
-                                    <span>Cut</span>
-                                </button>
-                                <button
-                                    onClick={() => { alert(`Di chuyển "${item.name}" đến thư mục khác (Đang phát triển)`); onClose(); }}
-                                    className="w-full px-4 py-2 hover:bg-[#37393b] flex items-center gap-2 text-left"
-                                >
-                                    <FolderInput className="w-4 h-4 text-gray-300" />
-                                    <span>Di chuyển</span>
                                 </button>
                             </div>
                         )}
@@ -273,7 +284,7 @@ export default function ContextMenu({
 
                         {/* Info Submenu */}
                         {activeSubmenu === 'info' && (
-                            <div className="absolute left-full top-0 ml-1 w-48 bg-[#282a2c] text-gray-200 rounded-xl shadow-xl py-1.5 border border-gray-700/80 z-50 text-[13px]">
+                            <div className="absolute left-full top-0 ml-1 w-48 bg-[#282a2c]/90 backdrop-blur-md text-gray-200 rounded-xl shadow-xl py-1.5 border border-gray-700/80 z-50 text-[13px]">
                                 <button
                                     onClick={() => { onShowInfo?.(item, 'details'); onClose(); }}
                                     className="w-full px-4 py-2 hover:bg-[#37393b] flex items-center gap-2 text-left"

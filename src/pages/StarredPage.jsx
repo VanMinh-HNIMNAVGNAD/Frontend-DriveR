@@ -64,6 +64,7 @@ export default function StarredPage() {
                 onReset={resetFilters}
             />
 
+            {/* View Container */}
             <div className="flex-1 overflow-y-auto mt-2">
                 {viewMode === 'grid' ? <FileGridView /> : <FileListView />}
             </div>

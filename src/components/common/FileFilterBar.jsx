@@ -29,7 +29,14 @@ export default function FileFilterBar({
     uniqueOwners = [],
     onReset
 }) {
-    const { sortField, setSortField, sortDirection, setSortDirection } = useFiles();
+    const { sortField, setSortField, sortDirection, setSortDirection, activeTab } = useFiles();
+
+    let showOwnerFilter = false;
+    if (['shared-with-me', 'shared-drives'].includes(activeTab)) {
+        showOwnerFilter = true;
+    } else if (activeTab === 'starred' && uniqueOwners.length > 1) {
+        showOwnerFilter = true;
+    }
 
     // Extended File Type Options
     const typeOptions = [
@@ -118,14 +125,16 @@ export default function FileFilterBar({
             />
 
             {/* Filter by Sender / Owner */}
-            <SelectDropdown
-                label="Người gửi / Sở hữu"
-                icon={User}
-                options={ownerOptions}
-                value={filterOwner}
-                onChange={setFilterOwner}
-                active={filterOwner !== 'all'}
-            />
+            {showOwnerFilter && (
+                <SelectDropdown
+                    label="Người gửi / Sở hữu"
+                    icon={User}
+                    options={ownerOptions}
+                    value={filterOwner}
+                    onChange={setFilterOwner}
+                    active={filterOwner !== 'all'}
+                />
+            )}
 
             {/* Quick Reset Filters Button */}
             {hasActiveFilters && (

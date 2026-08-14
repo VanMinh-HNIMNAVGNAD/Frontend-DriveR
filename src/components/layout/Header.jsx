@@ -18,7 +18,16 @@ import {
     Globe,
     ExternalLink,
     Sun,
-    Moon
+    Moon,
+    Trash2,
+    RotateCcw,
+    X,
+    CheckSquare,
+    Download,
+    Move,
+    Copy,
+    Scissors,
+    AlertCircle
 } from 'lucide-react';
 
 export default function Header({ toggleRightSidebar }) {
@@ -30,7 +39,23 @@ export default function Header({ toggleRightSidebar }) {
         filterType,
         isSidebarCollapsed,
         setActiveTab,
-        setCurrentFolderId
+        setCurrentFolderId,
+        selectedIds,
+        selectedCount,
+        deselectAll,
+        selectAll,
+        getSelectedItems,
+        folders,
+        files,
+        activeTab,
+        moveToTrash,
+        restoreFromTrash,
+        deletePermanently,
+        moveItem,
+        copyItem,
+        cutItems,
+        copyItems,
+        getDownloadUrl
     } = useFiles();
 
     const navigate = useNavigate();
@@ -57,8 +82,184 @@ export default function Header({ toggleRightSidebar }) {
         navigate('/app/home');
     };
 
+    const isTrashTab = activeTab === 'trash';
+    const isSpamTab = activeTab === 'spam';
+    const allCurrentSelected = (folders?.length + files?.length) > 0 && selectedCount >= (folders?.length + files?.length);
+
+    const handleDeleteSelected = async () => {
+        const items = getSelectedItems(folders, files);
+        if (!items.length) return;
+        if (!confirm(`Chuyển ${items.length} mục vào thùng rác?`)) return;
+
+        const errors = [];
+        for (const item of items) {
+            try { await moveToTrash(item.id); } 
+            catch { errors.push(item.name); }
+        }
+        deselectAll();
+        if (errors.length) alert(`Lỗi khi xóa: ${errors.join(', ')}`);
+    };
+
+    const handleRestoreSelected = async () => {
+        const items = getSelectedItems(folders, files);
+        if (!items.length) return;
+        if (!confirm(`Khôi phục ${items.length} mục?`)) return;
+
+        const errors = [];
+        for (const item of items) {
+            try { await restoreFromTrash(item.id); } 
+            catch { errors.push(item.name); }
+        }
+        deselectAll();
+        if (errors.length) alert(`Lỗi khi khôi phục: ${errors.join(', ')}`);
+    };
+
+    const handlePermanentDeleteSelected = async () => {
+        const items = getSelectedItems(folders, files);
+        if (!items.length) return;
+        if (!confirm(`Xóa vĩnh viễn ${items.length} mục? Hành động này không thể hoàn tác!`)) return;
+
+        const errors = [];
+        for (const item of items) {
+            try { await deletePermanently(item.id); } 
+            catch { errors.push(item.name); }
+        }
+        deselectAll();
+        if (errors.length) alert(`Lỗi khi xóa vĩnh viễn: ${errors.join(', ')}`);
+    };
+
+    const handleMoveSelected = async () => {
+        const items = getSelectedItems(folders, files);
+        if (!items.length) return;
+        const targetId = prompt('Nhập ID thư mục đích (để trống = gốc):');
+        if (targetId === null) return;
+
+        const errors = [];
+        for (const item of items) {
+            try { await moveItem(item.id, targetId || null); } 
+            catch { errors.push(item.name); }
+        }
+        deselectAll();
+        if (errors.length) alert(`Lỗi khi di chuyển: ${errors.join(', ')}`);
+    };
+
+    const handleCopySelected = async () => {
+        const items = getSelectedItems(folders, files);
+        if (!items.length) return;
+        const targetId = prompt('Nhập ID thư mục đích cho sao chép (để trống = gốc):');
+        if (targetId === null) return;
+
+        const errors = [];
+        for (const item of items) {
+            try { await copyItem(item.id, targetId || null); } 
+            catch { errors.push(item.name); }
+        }
+        deselectAll();
+        if (errors.length) alert(`Lỗi khi sao chép: ${errors.join(', ')}`);
+    };
+
+    const handleDownloadSelected = async () => {
+        const items = getSelectedItems(folders, files);
+        if (!items.length) return;
+
+        const fileItems = items.filter((i) => i.type !== 'folder');
+        const folderItems = items.filter((i) => i.type === 'folder');
+
+        if (folderItems.length > 0) {
+            alert(`Không thể tải xuống thư mục dạng ZIP (chưa hỗ trợ). Chỉ tải ${fileItems.length} tệp.`);
+        }
+
+        for (const item of fileItems) {
+            try {
+                const url = await getDownloadUrl(item.id);
+                if (url) {
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = item.name;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    await new Promise((r) => setTimeout(r, 300));
+                }
+            } catch {
+                console.error(`Lỗi tải xuống: ${item.name}`);
+            }
+        }
+    };
+
+    if (selectedCount > 0) {
+        return (
+            <header className="h-16 flex items-center justify-between px-3 md:px-5 bg-[#0b57d0] text-white border-b border-[#0b57d0] shrink-0 gap-3 transition-colors duration-200">
+                {/* Left */}
+                <div className="flex items-center gap-4">
+                    <button onClick={deselectAll} className="p-2 hover:bg-white/20 rounded-full transition-colors cursor-pointer" title="Đóng">
+                        <X className="w-5 h-5" />
+                    </button>
+                    <span className="font-semibold text-lg">{selectedCount} đã chọn</span>
+                    
+                    <div className="w-px h-6 bg-white/30 mx-2 hidden sm:block" />
+                    
+                    <button
+                        onClick={() => allCurrentSelected ? deselectAll() : selectAll(folders, files)}
+                        className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 hover:bg-white/20 rounded-lg transition-colors text-sm font-medium cursor-pointer"
+                    >
+                        <CheckSquare className="w-4 h-4" />
+                        <span>{allCurrentSelected ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}</span>
+                    </button>
+                </div>
+
+                {/* Right */}
+                <div className="flex items-center gap-1 sm:gap-2">
+                    {!isTrashTab && !isSpamTab ? (
+                        <>
+                            <button onClick={handleDeleteSelected} className="flex items-center gap-1.5 px-3 py-2 hover:bg-red-500/90 rounded-lg transition-colors text-sm font-medium cursor-pointer" title="Xóa">
+                                <Trash2 className="w-4 h-4" />
+                                <span className="hidden md:inline">Xóa</span>
+                            </button>
+                            <button 
+                                onClick={() => {
+                                    cutItems(Array.from(selectedIds));
+                                }} 
+                                className="flex items-center gap-1.5 px-3 py-2 hover:bg-white/20 rounded-lg transition-colors text-sm font-medium cursor-pointer" 
+                                title="Cắt (Ctrl+X)"
+                            >
+                                <Scissors className="w-4 h-4" />
+                                <span className="hidden md:inline">Cắt</span>
+                            </button>
+                            <button 
+                                onClick={() => {
+                                    copyItems(Array.from(selectedIds));
+                                }} 
+                                className="flex items-center gap-1.5 px-3 py-2 hover:bg-white/20 rounded-lg transition-colors text-sm font-medium cursor-pointer" 
+                                title="Sao chép (Ctrl+C)"
+                            >
+                                <Copy className="w-4 h-4" />
+                                <span className="hidden md:inline">Sao chép</span>
+                            </button>
+                            <button onClick={handleDownloadSelected} className="flex items-center gap-1.5 px-3 py-2 hover:bg-white/20 rounded-lg transition-colors text-sm font-medium cursor-pointer" title="Tải xuống">
+                                <Download className="w-4 h-4" />
+                                <span className="hidden md:inline">Tải xuống</span>
+                            </button>
+                        </>
+                    ) : (
+                        <>
+                            <button onClick={handleRestoreSelected} className="flex items-center gap-1.5 px-3 py-2 hover:bg-emerald-500/90 rounded-lg transition-colors text-sm font-medium cursor-pointer" title="Khôi phục">
+                                <RotateCcw className="w-4 h-4" />
+                                <span className="hidden md:inline">Khôi phục</span>
+                            </button>
+                            <button onClick={handlePermanentDeleteSelected} className="flex items-center gap-1.5 px-3 py-2 hover:bg-red-500/90 rounded-lg transition-colors text-sm font-medium cursor-pointer" title="Xóa vĩnh viễn">
+                                <AlertCircle className="w-4 h-4" />
+                                <span className="hidden md:inline">Xóa vĩnh viễn</span>
+                            </button>
+                        </>
+                    )}
+                </div>
+            </header>
+        );
+    }
+
     return (
-        <header className="h-16 flex items-center justify-between px-3 md:px-5 bg-white border-b border-gray-100 shrink-0 gap-3">
+        <header className="h-16 flex items-center justify-between px-3 md:px-5 bg-white border-b border-gray-100 shrink-0 gap-3 transition-colors duration-200">
             {/* LOGO & Web Title "driveR" */}
             <div className="flex items-center gap-2 shrink-0">
                 {/* Nút Toggle Sidebar */}

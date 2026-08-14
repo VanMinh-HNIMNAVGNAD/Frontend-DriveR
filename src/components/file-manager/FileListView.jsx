@@ -1,5 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useFiles } from '../../context/FileContext';
+import { storageApi } from '../../services/api';
+import { formatBytes } from '../../utils/formatFileSize';
+import * as XLSX from 'xlsx';
+import mammoth from 'mammoth';
 import FileSkeleton from '../common/FileSkeleton';
 import ContextMenu from './ContextMenu';
 import RenameModal from './RenameModal';
@@ -25,8 +29,189 @@ import {
     ArrowUp,
     ArrowDown,
     Shield,
-    Users
+    Users,
+    CheckSquare,
+    Square,
+    Minus
 } from 'lucide-react';
+
+// ── Mini thumbnail helpers ──────────────────────────────────────
+const MAX_THUMBNAIL_SIZE = 10 * 1024 * 1024; // 10MB
+
+function getFileCategoryForThumb(name = '') {
+    const n = name.toLowerCase();
+    if (n.endsWith('.pdf')) return 'pdf';
+    if (n.endsWith('.xlsx') || n.endsWith('.csv')) return 'sheet';
+    if (n.endsWith('.png') || n.endsWith('.jpg') || n.endsWith('.jpeg') || n.endsWith('.svg') || n.endsWith('.webp') || n.endsWith('.gif')) return 'image';
+    if (n.endsWith('.mp4') || n.endsWith('.mkv') || n.endsWith('.mov')) return 'video';
+    if (n.endsWith('.docx') || n.endsWith('.doc')) return 'docx';
+    if (n.endsWith('.txt') || n.endsWith('.md')) return 'textdoc';
+    // Code + JSON + YAML + XML + shell + ...
+    if (
+        n.endsWith('.js') || n.endsWith('.jsx') || n.endsWith('.ts') || n.endsWith('.tsx') ||
+        n.endsWith('.py') || n.endsWith('.java') || n.endsWith('.c') || n.endsWith('.cpp') ||
+        n.endsWith('.cs') || n.endsWith('.go') || n.endsWith('.rb') || n.endsWith('.php') ||
+        n.endsWith('.sh') || n.endsWith('.bash') || n.endsWith('.zsh') ||
+        n.endsWith('.json') || n.endsWith('.xml') || n.endsWith('.yaml') || n.endsWith('.yml') ||
+        n.endsWith('.toml') || n.endsWith('.ini') || n.endsWith('.env') ||
+        n.endsWith('.css') || n.endsWith('.scss') || n.endsWith('.html') || n.endsWith('.htm') ||
+        n.endsWith('.vue') || n.endsWith('.svelte') || n.endsWith('.kt') || n.endsWith('.swift') ||
+        n.endsWith('.rs') || n.endsWith('.dart') || n.endsWith('.lua') || n.endsWith('.sql') ||
+        n.endsWith('.exe')
+    ) return 'code';
+    return 'none';
+}
+
+/**
+ * FileRowThumb – mini thumbnail (40×28px) trong list view.
+ * Component riêng để dùng hooks hợp lệ.
+ */
+function FileRowThumb({ file }) {
+    const cat = getFileCategoryForThumb(file?.name);
+    // thumbType: 'image'|'video'|'pdf-blob'|'sheet'|'text'|null
+    const [thumbType, setThumbType] = useState(null);
+    const [thumbUrl, setThumbUrl] = useState(null);
+    const [textContent, setTextContent] = useState(null);
+    const [sheetData, setSheetData] = useState(null);
+
+    useEffect(() => {
+        if (!file?.id || cat === 'none') return;
+        const sizeOk = !file.size || file.size <= MAX_THUMBNAIL_SIZE;
+        if (!sizeOk) return; // quá lớn → fallback icon ngay
+
+        let isMounted = true;
+        let blobUrlToRevoke = null;
+
+        const n = file.name.toLowerCase();
+
+        if (cat === 'image' || cat === 'video') {
+            storageApi.getPreviewUrl(file.id)
+                .then(res => {
+                    if (isMounted && res?.previewUrl) {
+                        setThumbUrl(res.previewUrl);
+                        setThumbType(cat);
+                    }
+                }).catch(() => {});
+
+        } else if (cat === 'pdf') {
+            (async () => {
+                try {
+                    const res = await storageApi.getPreviewUrl(file.id);
+                    if (!res?.previewUrl || !isMounted) return;
+                    const response = await fetch(res.previewUrl);
+                    if (!response.ok || !isMounted) return;
+                    const buffer = await response.arrayBuffer();
+                    if (!isMounted) return;
+                    const blob = new Blob([buffer], { type: 'application/pdf' });
+                    blobUrlToRevoke = URL.createObjectURL(blob);
+                    setThumbUrl(blobUrlToRevoke);
+                    setThumbType('pdf-blob');
+                } catch { /* fallback icon */ }
+            })();
+
+        } else if (cat === 'sheet') {
+            (async () => {
+                try {
+                    const res = await storageApi.getPreviewUrl(file.id);
+                    if (!res?.previewUrl || !isMounted) return;
+                    const response = await fetch(res.previewUrl);
+                    if (!response.ok || !isMounted) return;
+                    const buffer = await response.arrayBuffer();
+                    if (!isMounted) return;
+                    const wb = XLSX.read(buffer, { type: 'array' });
+                    const ws = wb.Sheets[wb.SheetNames[0]];
+                    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+                    if (isMounted && rows.length > 0) {
+                        setSheetData(rows.slice(0, 3));
+                        setThumbType('sheet');
+                    }
+                } catch { /* fallback icon */ }
+            })();
+
+        } else if (cat === 'docx') {
+            (async () => {
+                try {
+                    const res = await storageApi.getPreviewUrl(file.id);
+                    if (!res?.previewUrl || !isMounted) return;
+                    const response = await fetch(res.previewUrl);
+                    if (!response.ok || !isMounted) return;
+                    const buffer = await response.arrayBuffer();
+                    if (!isMounted) return;
+                    const result = await mammoth.extractRawText({ arrayBuffer: buffer });
+                    if (isMounted && result?.value?.trim()) {
+                        setTextContent(result.value.slice(0, 80));
+                        setThumbType('text');
+                    }
+                } catch { /* fallback icon */ }
+            })();
+
+        } else if (cat === 'textdoc' || cat === 'code') {
+            storageApi.getFileTextContent(file.id)
+                .then(res => {
+                    if (isMounted && res?.content) {
+                        setTextContent(res.content.slice(0, 80));
+                        setThumbType('text');
+                    }
+                }).catch(() => {});
+        }
+
+        return () => {
+            isMounted = false;
+            if (blobUrlToRevoke) URL.revokeObjectURL(blobUrlToRevoke);
+        };
+    }, [cat, file?.id, file?.size]);
+
+    if (!thumbType) return null;
+
+    return (
+        <div className="w-10 h-7 rounded overflow-hidden flex-shrink-0 bg-gray-100 border border-gray-200/60" style={{ minWidth: '2.5rem' }}>
+            {thumbType === 'image' && thumbUrl ? (
+                <img src={thumbUrl} alt={file.name} className="w-full h-full object-cover" />
+
+            ) : thumbType === 'video' && thumbUrl ? (
+                <video
+                    src={thumbUrl} muted preload="metadata"
+                    className="w-full h-full object-cover pointer-events-none"
+                    onLoadedMetadata={(e) => { e.target.currentTime = 1; }}
+                />
+
+            ) : thumbType === 'pdf-blob' && thumbUrl ? (
+                <iframe
+                    src={`${thumbUrl}#toolbar=0&navpanes=0&scrollbar=0&page=1&view=FitH`}
+                    title={file.name}
+                    className="pointer-events-none border-0"
+                    style={{ width: '200%', height: '200%', transform: 'scale(0.5)', transformOrigin: 'top left' }}
+                />
+
+            ) : thumbType === 'sheet' && sheetData ? (
+                <div className="w-full h-full bg-emerald-50 p-px overflow-hidden">
+                    <table className="w-full border-collapse" style={{ fontSize: '5px', lineHeight: 1.2 }}>
+                        <tbody>
+                            {sheetData.map((row, ri) => (
+                                <tr key={ri} className={ri === 0 ? 'bg-emerald-100 font-bold' : ''}>
+                                    {Array.from({ length: Math.min(row.length, 4) }).map((_, ci) => (
+                                        <td key={ci} className="border border-emerald-200/40 px-px truncate text-emerald-900 opacity-70">
+                                            {String(row[ci] ?? '').slice(0, 6)}
+                                        </td>
+                                    ))}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+
+            ) : thumbType === 'text' && textContent ? (
+                <div className="w-full h-full bg-gray-50 p-0.5 overflow-hidden">
+                    <pre className="text-[6px] font-mono leading-tight opacity-50 whitespace-pre-wrap break-all text-gray-700" style={{ overflow: 'hidden', maxHeight: '100%' }}>
+                        {textContent}
+                    </pre>
+                </div>
+
+            ) : null}
+        </div>
+    );
+}
+// ──────────────────────────────────────────────────────────────────
 
 export default function FileListView() {
     const { 
@@ -52,7 +237,21 @@ export default function FileListView() {
         sortField, 
         setSortField,
         sortDirection, 
-        setSortDirection
+        setSortDirection,
+        // Selection
+        selectedIds,
+        selectedCount,
+        isSelected,
+        toggleSelect,
+        selectRange,
+        selectAll,
+        deselectAll,
+        // Clipboard
+        clipboard,
+        isPasting,
+        cutItems,
+        copyItems,
+        pasteItems,
     } = useFiles();
 
     // Context menu state
@@ -63,12 +262,13 @@ export default function FileListView() {
     const [shareItemTarget, setShareItemTarget] = useState(null);
     const [geminiItemTarget, setGeminiItemTarget] = useState(null);
 
-    const formatBytes = (bytes) => {
-        if (!bytes) return '--';
-        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(1024));
-        return parseFloat((bytes / Math.pow(1024, i)).toFixed(1)) + ' ' + sizes[i];
-    };
+    // ── Selection Helpers ──
+    const allCurrentCount = (folders?.length || 0) + (files?.length || 0);
+    const allSelected = allCurrentCount > 0 && selectedCount >= allCurrentCount;
+    const someSelected = selectedCount > 0 && !allSelected;
+
+    // Row click: no selection here.
+    // Selection is handled exclusively by the checkbox column.
 
     const getFileTypeLabel = (item) => {
         if (item.type === 'folder') return 'Thư mục';
@@ -174,6 +374,24 @@ export default function FileListView() {
                 <table className="w-full text-left border-collapse min-w-[850px]">
                     <thead>
                         <tr className="border-b border-gray-200 text-[11px] font-bold text-gray-500 uppercase tracking-wider bg-gray-50/80 select-none">
+                            {/* Checkbox Header */}
+                            <th className="py-3 px-3 w-8 text-center">
+                                <button
+                                    onClick={() => allSelected ? deselectAll() : selectAll(folders, files)}
+                                    className="flex items-center justify-center text-gray-400 hover:text-blue-600 transition-colors"
+                                    title={allSelected ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                                >
+                                    {allSelected ? (
+                                        <CheckSquare className="w-4 h-4 text-blue-600" />
+                                    ) : someSelected ? (
+                                        <Minus className="w-4 h-4 text-blue-500" />
+                                    ) : (
+                                        <Square className="w-4 h-4" />
+                                    )}
+                                </button>
+                            </th>
+                            
+                            {/* Star Header */}
                             <th className="py-3 px-3 w-8 text-center"></th>
                             
                             {/* Name Header */}
@@ -202,10 +420,10 @@ export default function FileListView() {
                                 </div>
                             </th>
 
-                            {/* Type Header */}
+                            {/* Type Header (Hidden on Mobile & Tablet) */}
                             <th 
                                 onClick={() => handleSort('type')}
-                                className="py-3 px-3 font-semibold hover:text-gray-900 cursor-pointer transition-colors"
+                                className="py-3 px-3 font-semibold hover:text-gray-900 cursor-pointer transition-colors hidden lg:table-cell"
                             >
                                 <div className="flex items-center gap-1">
                                     <span>Type</span>
@@ -215,10 +433,10 @@ export default function FileListView() {
                                 </div>
                             </th>
 
-                            {/* Owner Header */}
+                            {/* Owner Header (Hidden on Mobile) */}
                             <th 
                                 onClick={() => handleSort('owner')}
-                                className="py-3 px-3 font-semibold hover:text-gray-900 cursor-pointer transition-colors"
+                                className="py-3 px-3 font-semibold hover:text-gray-900 cursor-pointer transition-colors hidden sm:table-cell"
                             >
                                 <div className="flex items-center gap-1">
                                     <span>Owner</span>
@@ -228,28 +446,10 @@ export default function FileListView() {
                                 </div>
                             </th>
 
-                            {/* Group Header */}
-                            <th 
-                                onClick={() => handleSort('group')}
-                                className="py-3 px-3 font-semibold hover:text-gray-900 cursor-pointer transition-colors"
-                            >
-                                <div className="flex items-center gap-1">
-                                    <span>Group</span>
-                                    {sortField === 'group' && (
-                                        sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-blue-600" /> : <ArrowDown className="w-3 h-3 text-blue-600" />
-                                    )}
-                                </div>
-                            </th>
-
-                            {/* Permissions Header */}
-                            <th className="py-3 px-3 font-semibold text-gray-500">
-                                <span>Permissions</span>
-                            </th>
-
-                            {/* Modified Header */}
+                            {/* Modified Header (Hidden on Mobile) */}
                             <th 
                                 onClick={() => handleSort('updatedAt')}
-                                className="py-3 px-3 font-semibold hover:text-gray-900 cursor-pointer transition-colors"
+                                className="py-3 px-3 font-semibold hover:text-gray-900 cursor-pointer transition-colors hidden sm:table-cell"
                             >
                                 <div className="flex items-center gap-1">
                                     <span>Modified</span>
@@ -259,19 +459,7 @@ export default function FileListView() {
                                 </div>
                             </th>
 
-                            {/* Created Header */}
-                            <th 
-                                onClick={() => handleSort('createdAt')}
-                                className="py-3 px-3 font-semibold hover:text-gray-900 cursor-pointer transition-colors"
-                            >
-                                <div className="flex items-center gap-1">
-                                    <span>Created</span>
-                                    {sortField === 'createdAt' && (
-                                        sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-blue-600" /> : <ArrowDown className="w-3 h-3 text-blue-600" />
-                                    )}
-                                </div>
-                            </th>
-
+                            {/* Actions Header */}
                             <th className="py-3 px-3 w-10 text-center"></th>
                         </tr>
                     </thead>
@@ -279,7 +467,8 @@ export default function FileListView() {
                     <tbody className="divide-y divide-gray-200 text-xs">
                         {/* Render Folders */}
                         {sortedFolders.map((folder) => {
-                            const isSelected = false; // TODO: Implement selection logic (B18)
+                            const itemSelected = isSelected(folder.id);
+                            const isCut = clipboard.mode === 'cut' && clipboard.items.some((e) => e.id === folder.id);
                             return (
                             <tr
                                 key={folder.id}
@@ -287,9 +476,35 @@ export default function FileListView() {
                                 onKeyDown={(e) => handleKeyDown(e, folder)}
                                 onDoubleClick={() => handleItemDoubleClick(folder)}
                                 onContextMenu={(e) => openContextMenu(e, folder)}
-                                className={`transition-colors group cursor-pointer ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                                className={`transition-colors group cursor-pointer ${
+                                    isCut ? 'opacity-50 border-dashed' : ''
+                                } ${
+                                    itemSelected
+                                        ? 'bg-blue-50 ring-1 ring-inset ring-blue-200'
+                                        : 'hover:bg-gray-50'
+                                }`}
                             >
-                                {/* Star Column */}
+                                {/* Checkbox Column – only this triggers selection */}
+                                <td
+                                    className="py-2.5 px-3 text-center"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (e.shiftKey) {
+                                            e.preventDefault();
+                                            selectRange(folder.id, folders, files);
+                                        } else {
+                                            toggleSelect(folder.id);
+                                        }
+                                    }}
+                                >
+                                    <button className="flex items-center justify-center text-gray-300 hover:text-blue-600 transition-colors">
+                                        {itemSelected
+                                            ? <CheckSquare className="w-4 h-4 text-blue-600" />
+                                            : <Square className="w-4 h-4" />}
+                                    </button>
+                                </td>
+
+                                {/* Star Column – moved after checkbox */}
                                 <td className="py-2.5 px-3 text-center">
                                     <button
                                         onClick={(e) => {
@@ -318,37 +533,20 @@ export default function FileListView() {
                                 <td className="py-2.5 px-3 text-gray-500 font-mono text-[11px]">--</td>
 
                                 {/* Type Column */}
-                                <td className="py-2.5 px-3">
+                                <td className="py-2.5 px-3 hidden lg:table-cell">
                                     <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-medium text-[11px] border border-amber-200/60">
                                         Thư mục
                                     </span>
                                 </td>
 
                                 {/* Owner Column */}
-                                <td className="py-2.5 px-3 text-gray-700 font-medium truncate max-w-[100px]">
+                                <td className="py-2.5 px-3 text-gray-700 font-medium truncate max-w-[100px] hidden sm:table-cell">
                                     {folder.owner || 'Tôi'}
                                 </td>
 
-                                {/* Group Column */}
-                                <td className="py-2.5 px-3 text-gray-500 font-mono text-[11px]">
-                                    {folder.group || 'users'}
-                                </td>
-
-                                {/* Permissions Column */}
-                                <td className="py-2.5 px-3 font-mono text-[11px] text-gray-600">
-                                    <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">
-                                        {folder.permissions || 'rwxr-xr-x'}
-                                    </span>
-                                </td>
-
                                 {/* Modified Column */}
-                                <td className="py-2.5 px-3 text-gray-500 font-mono text-[11px] whitespace-nowrap">
+                                <td className="py-2.5 px-3 text-gray-500 font-mono text-[11px] whitespace-nowrap hidden sm:table-cell">
                                     {folder.updatedAt}
-                                </td>
-
-                                {/* Created Column */}
-                                <td className="py-2.5 px-3 text-gray-400 font-mono text-[11px] whitespace-nowrap">
-                                    {folder.createdAt || '2026-05-10 08:00'}
                                 </td>
 
                                 {/* Action Options */}
@@ -366,7 +564,8 @@ export default function FileListView() {
 
                         {/* Render Files */}
                         {sortedFiles.map((file) => {
-                            const isSelected = false; // TODO: Implement selection logic (B18)
+                            const itemSelected = isSelected(file.id);
+                            const isCut = clipboard.mode === 'cut' && clipboard.items.some((e) => e.id === file.id);
                             return (
                             <tr
                                 key={file.id}
@@ -374,8 +573,34 @@ export default function FileListView() {
                                 onKeyDown={(e) => handleKeyDown(e, file)}
                                 onDoubleClick={() => handleItemDoubleClick(file)}
                                 onContextMenu={(e) => openContextMenu(e, file)}
-                                className={`transition-colors group cursor-pointer ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                                className={`transition-colors group cursor-pointer ${
+                                    isCut ? 'opacity-50 border-dashed' : ''
+                                } ${
+                                    itemSelected
+                                        ? 'bg-blue-50 ring-1 ring-inset ring-blue-200'
+                                        : 'hover:bg-gray-50'
+                                }`}
                             >
+                                {/* Checkbox Column – only this triggers selection */}
+                                <td
+                                    className="py-2.5 px-3 text-center"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (e.shiftKey) {
+                                            e.preventDefault();
+                                            selectRange(file.id, folders, files);
+                                        } else {
+                                            toggleSelect(file.id);
+                                        }
+                                    }}
+                                >
+                                    <button className="flex items-center justify-center text-gray-300 hover:text-blue-600 transition-colors">
+                                        {itemSelected
+                                            ? <CheckSquare className="w-4 h-4 text-blue-600" />
+                                            : <Square className="w-4 h-4" />}
+                                    </button>
+                                </td>
+
                                 {/* Star Column */}
                                 <td className="py-2.5 px-3 text-center">
                                     <button
@@ -391,9 +616,10 @@ export default function FileListView() {
 
                                 {/* Name Column */}
                                 <td className="py-2.5 px-3">
-                                    <div className="flex items-center gap-2.5">
+                                    <div className="flex items-center gap-2">
                                         {getFileIcon(file)}
-                                        <span className="font-semibold text-gray-900 group-hover:text-blue-600 truncate max-w-[200px]" title={file.name}>
+                                        <FileRowThumb file={file} />
+                                        <span className="font-semibold text-gray-900 group-hover:text-blue-600 truncate max-w-[180px]" title={file.name}>
                                             {file.name}
                                         </span>
                                     </div>
@@ -405,37 +631,20 @@ export default function FileListView() {
                                 </td>
 
                                 {/* Type Column */}
-                                <td className="py-2.5 px-3">
+                                <td className="py-2.5 px-3 hidden lg:table-cell">
                                     <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-medium text-[11px] border border-blue-200/60 whitespace-nowrap">
                                         {getFileTypeLabel(file)}
                                     </span>
                                 </td>
 
                                 {/* Owner Column */}
-                                <td className="py-2.5 px-3 text-gray-700 font-medium truncate max-w-[100px]">
+                                <td className="py-2.5 px-3 text-gray-700 font-medium truncate max-w-[100px] hidden sm:table-cell">
                                     {file.owner || 'Tôi'}
                                 </td>
 
-                                {/* Group Column */}
-                                <td className="py-2.5 px-3 text-gray-500 font-mono text-[11px]">
-                                    {file.group || 'users'}
-                                </td>
-
-                                {/* Permissions Column */}
-                                <td className="py-2.5 px-3 font-mono text-[11px] text-gray-600">
-                                    <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">
-                                        {file.permissions || 'rw-r--r--'}
-                                    </span>
-                                </td>
-
                                 {/* Modified Column */}
-                                <td className="py-2.5 px-3 text-gray-500 font-mono text-[11px] whitespace-nowrap">
+                                <td className="py-2.5 px-3 text-gray-500 font-mono text-[11px] whitespace-nowrap hidden sm:table-cell">
                                     {file.updatedAt}
-                                </td>
-
-                                {/* Created Column */}
-                                <td className="py-2.5 px-3 text-gray-400 font-mono text-[11px] whitespace-nowrap">
-                                    {file.createdAt || '2026-07-01 09:15'}
                                 </td>
 
                                 {/* Action Options */}
@@ -508,6 +717,23 @@ export default function FileListView() {
                     }
                 }}
                 onRename={(item) => setRenameItemTarget(item)}
+                onCut={(targetItem) => {
+                    if (selectedIds.has(targetItem.id) && selectedIds.size > 1) {
+                        cutItems(Array.from(selectedIds));
+                    } else {
+                        cutItems([targetItem.id]);
+                    }
+                }}
+                onCopy={(targetItem) => {
+                    if (selectedIds.has(targetItem.id) && selectedIds.size > 1) {
+                        copyItems(Array.from(selectedIds));
+                    } else {
+                        copyItems([targetItem.id]);
+                    }
+                }}
+                onPaste={(targetParentId) => pasteItems(targetParentId)}
+                canPaste={clipboard.items.length > 0}
+                isPasting={isPasting}
                 onShare={(item) => setShareItemTarget(item)}
                 onGemini={(item) => setGeminiItemTarget(item)}
                 onToggleStar={(item) => toggleStar(item.id)}

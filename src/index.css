@@ -35,6 +35,59 @@
   .border-glass-hover:hover {
     border-color: rgba(99, 102, 241, 0.4);
   }
+
+  /* Reliable Animated Gradient Text */
+  .gradient-text-sunset {
+    background: linear-gradient(135deg, #fb923c 0%, #f43f5e 35%, #c084fc 70%, #fb923c 100%);
+    background-size: 300% 300%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    color: transparent;
+    display: inline-block;
+    transition: filter 0.4s ease, transform 0.3s ease;
+  }
+  .gradient-text-sunset:hover {
+    animation: gradientFlow 5s ease infinite;
+    filter: drop-shadow(0 0 16px rgba(249, 115, 22, 0.45));
+  }
+
+  /* Hover Shimmer Text for Main Titles */
+  .hover-shimmer-text {
+    background: linear-gradient(90deg, #ffffff 0%, #ffffff 30%, #fb923c 55%, #f43f5e 80%, #ffffff 100%);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    color: transparent;
+    transition: background-position 0.8s cubic-bezier(0.4, 0, 0.2, 1), filter 0.4s ease;
+    cursor: default;
+  }
+  .hover-shimmer-text:hover {
+    background-position: -100% center;
+    filter: drop-shadow(0 0 10px rgba(251, 146, 60, 0.35));
+  }
+
+  /* Dynamic Gradient Button Hover Effect */
+  .hover-gradient-btn {
+    background-size: 200% auto;
+    transition: all 0.4s ease;
+  }
+  .hover-gradient-btn:hover {
+    background-position: right center;
+    box-shadow: 0 10px 25px -5px rgba(249, 115, 22, 0.4);
+    transform: translateY(-2px);
+  }
+
+  /* Sunset Glow Card Border Hover */
+  .hover-sunset-card {
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .hover-sunset-card:hover {
+    border-color: rgba(249, 115, 22, 0.45);
+    box-shadow: 0 0 35px -5px rgba(244, 63, 94, 0.2);
+    transform: translateY(-4px);
+  }
 }
 
 /* Custom Keyframe Animations */
@@ -70,6 +123,29 @@
   }
 }
 
+@keyframes gradientFlow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes sunsetPulse {
+  0%, 100% {
+    transform: scale(1) translate(0, 0);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.1) translate(-2%, 2%);
+    opacity: 0.8;
+  }
+}
+
 .animate-float-slow {
   animation: floatSlow 6s ease-in-out infinite;
 }
@@ -85,6 +161,10 @@
 .animate-border-beam {
   background-size: 200% 200%;
   animation: borderBeam 6s linear infinite;
+}
+
+.animate-sunset-pulse {
+  animation: sunsetPulse 8s ease-in-out infinite;
 }
 
 /* Smooth Scrolling */

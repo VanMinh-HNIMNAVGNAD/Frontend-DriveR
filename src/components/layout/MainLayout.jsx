@@ -40,7 +40,7 @@ export default function MainLayout() {
                 />
 
                 {/* Body Content */}
-                <main className="flex-1 overflow-hidden px-5 py-3">
+                <main className="flex-1 overflow-hidden px-3 sm:px-5 py-3 relative z-0">
                     <Outlet />
                 </main>
             </div>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo, memo, useCallback } from 'react';
 import {
     UploadCloud,
     CheckCircle2,
@@ -19,21 +19,25 @@ import {
  *   onDismissError: (id) => void  — xóa 1 job lỗi khỏi queue
  *   onRetry: (id) => void         — thử lại job lỗi
  */
-export default function UploadProgress({ queue = [], onDismissError, onRetry }) {
+export default memo(function UploadProgress({ queue = [], onDismissError, onRetry }) {
     const [isMinimized, setIsMinimized] = useState(false);
 
+    // Tính toán tổng hợp qua useMemo
+    const { totalPercent, activeCount, doneCount, errorCount, pendingCount, allDone } = useMemo(() => {
+        if (queue.length === 0) return { totalPercent: 0, activeCount: 0, doneCount: 0, errorCount: 0, pendingCount: 0, allDone: false };
+        const total = Math.round(
+            queue.reduce((sum, job) => sum + (job.percent || 0), 0) / queue.length,
+        );
+        const active = queue.filter((j) => j.status === 'uploading' || j.status === 'confirming').length;
+        const done = queue.filter((j) => j.status === 'done').length;
+        const err = queue.filter((j) => j.status === 'error').length;
+        const pending = queue.filter((j) => j.status === 'pending').length;
+        const isAllDone = queue.length > 0 && queue.every((j) => j.status === 'done' || j.status === 'error');
+        
+        return { totalPercent: total, activeCount: active, doneCount: done, errorCount: err, pendingCount: pending, allDone: isAllDone };
+    }, [queue]);
+
     if (queue.length === 0) return null;
-
-    // Tính tổng tiến trình
-    const totalPercent = Math.round(
-        queue.reduce((sum, job) => sum + (job.percent || 0), 0) / queue.length,
-    );
-
-    const activeCount = queue.filter((j) => j.status === 'uploading' || j.status === 'confirming').length;
-    const doneCount = queue.filter((j) => j.status === 'done').length;
-    const errorCount = queue.filter((j) => j.status === 'error').length;
-    const pendingCount = queue.filter((j) => j.status === 'pending').length;
-    const allDone = queue.length > 0 && queue.every((j) => j.status === 'done' || j.status === 'error');
 
     const headerLabel = allDone
         ? `Hoàn tất ${doneCount}/${queue.length} tệp${errorCount > 0 ? ` · ${errorCount} lỗi` : ''}`
@@ -88,19 +92,26 @@ export default function UploadProgress({ queue = [], onDismissError, onRetry }) 
                         <FileJobRow
                             key={job.id}
                             job={job}
-                            onDismiss={() => onDismissError?.(job.id)}
-                            onRetry={() => onRetry?.(job.id)}
+                            jobId={job.id}
+                            onDismissError={onDismissError}
+                            onRetry={onRetry}
                         />
                     ))}
                 </div>
             )}
         </div>
     );
-}
+});
+
 
 /** Một dòng hiển thị trạng thái 1 file */
-function FileJobRow({ job, onDismiss, onRetry }) {
+const FileJobRow = memo(function FileJobRow({ job, jobId, onDismissError, onRetry }) {
     const { fileName, percent, status, error } = job;
+
+    // Bind jobId bên trong component với useCallback để tạo stable ref
+    // — không cần tạo inline arrow function ở parent, memo sẽ hoạt động đúng
+    const handleDismiss = useCallback(() => onDismissError?.(jobId), [onDismissError, jobId]);
+    const handleRetry = useCallback(() => onRetry?.(jobId), [onRetry, jobId]);
 
     const statusIcon = () => {
         switch (status) {
@@ -179,14 +190,14 @@ function FileJobRow({ job, onDismiss, onRetry }) {
                 {status === 'error' && (
                     <div className="flex items-center gap-0.5 shrink-0">
                         <button
-                            onClick={onRetry}
+                            onClick={handleRetry}
                             className="p-0.5 hover:bg-blue-50 rounded transition-colors"
                             title="Thử lại"
                         >
                             <RefreshCw className="w-3.5 h-3.5 text-blue-400" />
                         </button>
                         <button
-                            onClick={onDismiss}
+                            onClick={handleDismiss}
                             className="p-0.5 hover:bg-rose-50 rounded transition-colors"
                             title="Xóa thông báo lỗi"
                         >
@@ -197,4 +208,5 @@ function FileJobRow({ job, onDismiss, onRetry }) {
             </div>
         </div>
     );
-}
+});
+

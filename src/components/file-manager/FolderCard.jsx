@@ -1,4 +1,4 @@
-import { Folder, MoreVertical, Star, Users } from 'lucide-react';
+import { Folder, MoreVertical, Star, Users, CheckSquare, Square } from 'lucide-react';
 
 const folderColorPalettes = [
     { bg: 'bg-red-50 border-red-200 hover:bg-red-100 hover:border-red-300', text: 'text-red-700', icon: 'text-red-500' },
@@ -20,17 +20,44 @@ function getFolderPalette(name = '') {
     return folderColorPalettes[index];
 }
 
-export default function FolderCard({ folder, onDoubleClick, onContextMenu, onStarToggle }) {
+export default function FolderCard({ folder, onDoubleClick, onContextMenu, onStarToggle, isSelected, isCut = false, onToggleSelect, onSelectRange }) {
     const palette = getFolderPalette(folder?.name);
-    const isSelected = false; // TODO: Implement selection logic (B18)
+
+    // Card click: no selection toggle here.
+    // Selection is handled exclusively by the checkbox button.
 
     return (
         <div
             onDoubleClick={() => onDoubleClick && onDoubleClick(folder)}
             onContextMenu={(e) => onContextMenu && onContextMenu(e, folder)}
-            className={`group relative flex items-center justify-between p-3.5 rounded-2xl cursor-pointer transition-all duration-200 border shadow-sm hover:shadow-md hover:-translate-y-0.5 ${isSelected ? 'ring-2 ring-blue-500 bg-blue-50' : palette.bg}`}
+            className={`group relative flex items-center justify-between p-3.5 rounded-2xl cursor-pointer transition-all duration-200 border shadow-sm hover:shadow-md hover:-translate-y-0.5 ${
+                isCut ? 'opacity-50 border-dashed' : ''
+            } ${isSelected ? 'ring-2 ring-blue-500 border-blue-300 bg-blue-50' : palette.bg}`}
         >
-            <div className="flex items-center gap-3 min-w-0 pr-2">
+            {/* Checkbox top-left – only this triggers selection */}
+            <button
+                onClick={(e) => {
+                    e.stopPropagation();
+                    if (e.shiftKey) {
+                        e.preventDefault();
+                        onSelectRange && onSelectRange(folder.id);
+                    } else {
+                        onToggleSelect && onToggleSelect(folder.id);
+                    }
+                }}
+                className={`absolute top-2 left-2 z-20 p-0.5 rounded transition-all ${
+                    isSelected
+                        ? 'opacity-100 text-blue-600'
+                        : 'opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600'
+                }`}
+                title={isSelected ? 'Bo chon' : 'Chon'}
+            >
+                {isSelected
+                    ? <CheckSquare className="w-4 h-4" />
+                    : <Square className="w-4 h-4" />}
+            </button>
+
+            <div className="flex items-center gap-3 min-w-0 pr-2 pl-5">
                 <div className={`p-2 rounded-xl bg-white/80 shadow-2xs ${palette.icon}`}>
                     <Folder className="w-5 h-5 fill-current" />
                 </div>
@@ -40,7 +67,7 @@ export default function FolderCard({ folder, onDoubleClick, onContextMenu, onSta
                     </span>
                     {folder.isShared && (
                         <span className="text-[11px] text-gray-500 flex items-center gap-1">
-                            <Users className="w-3 h-3 text-blue-500" /> Được chia sẻ
+                            <Users className="w-3 h-3 text-blue-500" /> Duoc chia se
                         </span>
                     )}
                 </div>
@@ -53,14 +80,14 @@ export default function FolderCard({ folder, onDoubleClick, onContextMenu, onSta
                         onStarToggle && onStarToggle(folder.id);
                     }}
                     className="p-1 text-gray-400 hover:text-amber-500 rounded-full hover:bg-white/60 transition-colors"
-                    title={folder.isStarred ? 'Bỏ đánh dấu sao' : 'Đánh dấu sao'}
+                    title={folder.isStarred ? 'Bo danh dau sao' : 'Danh dau sao'}
                 >
                     <Star className={`w-4 h-4 ${folder.isStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
                 </button>
                 <button
                     onClick={(e) => onContextMenu && onContextMenu(e, folder)}
                     className="p-1 text-gray-500 hover:text-gray-800 rounded-full hover:bg-white/60 transition-colors"
-                    title="Tùy chọn khác"
+                    title="Tuy chon khac"
                 >
                     <MoreVertical className="w-4 h-4" />
                 </button>

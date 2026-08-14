@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
+import { flushSync } from 'react-dom';
 import { useFiles } from '../../context/FileContext';
 import { filesApi } from '../../services/api';
+import { formatBytes } from '../../utils/formatFileSize';
 import { 
     X, 
     FileText, 
@@ -28,7 +30,16 @@ import {
     Music,
     Database,
     Layers,
-    Eye
+    Eye,
+    AlertCircle,
+    RotateCcw,
+    Trash2,
+    Upload,
+    Download,
+    Star,
+    Copy,
+    RefreshCw,
+    Loader2
 } from 'lucide-react';
 
 export default function FileInfoDrawer({ isOpen, item, activeTab = 'details', onClose, onOpenShare, onOpenRename }) {
@@ -39,7 +50,37 @@ export default function FileInfoDrawer({ isOpen, item, activeTab = 'details', on
     const [savedDescSuccess, setSavedDescSuccess] = useState(false);
     const [versions, setVersions] = useState(null);
     const [activityLogs, setActivityLogs] = useState([]);
+    const [activityError, setActivityError] = useState(null);
     const [loadingTab, setLoadingTab] = useState(false);
+
+    useEffect(() => {
+        if (activeTab) {
+            setCurrentTab(activeTab);
+        }
+    }, [activeTab, isOpen]);
+
+    useEffect(() => {
+        if (item) {
+            setDescription(item.description || '');
+        }
+    }, [item]);
+
+    const fetchActivityLogs = () => {
+        if (!item?.id) return;
+        setLoadingTab(true);
+        setActivityError(null);
+        filesApi.getActivityLogs(item.id)
+            .then((data) => {
+                setActivityLogs(Array.isArray(data) ? data : []);
+            })
+            .catch((err) => {
+                console.error('[Activity Logs Error]', err);
+                setActivityError(err.message || 'Không thể tải lịch sử hoạt động. Vui lòng thử lại.');
+            })
+            .finally(() => {
+                setLoadingTab(false);
+            });
+    };
 
     useEffect(() => {
         if (!isOpen || !item) return;
@@ -50,13 +91,9 @@ export default function FileInfoDrawer({ isOpen, item, activeTab = 'details', on
                 .catch((err) => console.error(err))
                 .finally(() => setLoadingTab(false));
         } else if (currentTab === 'activity') {
-            setLoadingTab(true);
-            filesApi.getActivityLogs(item.id)
-                .then((data) => setActivityLogs(data || []))
-                .catch((err) => console.error(err))
-                .finally(() => setLoadingTab(false));
+            fetchActivityLogs();
         }
-    }, [isOpen, item, currentTab]);
+    }, [isOpen, item?.id, currentTab]);
 
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -76,13 +113,6 @@ export default function FileInfoDrawer({ isOpen, item, activeTab = 'details', on
 
     const isFolder = item.type === 'folder';
 
-    const formatBytes = (bytes) => {
-        if (!bytes) return '--';
-        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(1024));
-        return parseFloat((bytes / Math.pow(1024, i)).toFixed(1)) + ' ' + sizes[i];
-    };
-
     const getFileIconLarge = () => {
         if (isFolder) return <Folder className="w-16 h-16 text-amber-500 fill-amber-500/20 stroke-1" />;
         const name = item.name.toLowerCase();
@@ -97,6 +127,165 @@ export default function FileInfoDrawer({ isOpen, item, activeTab = 'details', on
         if (name.endsWith('.fig')) return <Layers className="w-16 h-16 text-purple-600 stroke-1" />;
         if (name.endsWith('.zip') || name.endsWith('.rar')) return <FileArchive className="w-16 h-16 text-amber-600 stroke-1" />;
         return <File className="w-16 h-16 text-gray-500 stroke-1" />;
+    };
+
+    const getActivityMeta = (action = '') => {
+        const act = (action || '').toUpperCase();
+        if (act.includes('UPLOAD')) {
+            return {
+                label: 'Tải lên tệp',
+                icon: Upload,
+                colorClass: 'text-emerald-600 dark:text-emerald-400',
+                bgClass: 'bg-emerald-100 dark:bg-emerald-900/40',
+            };
+        }
+        if (act.includes('RENAME')) {
+            return {
+                label: 'Đổi tên',
+                icon: Pencil,
+                colorClass: 'text-amber-600 dark:text-amber-400',
+                bgClass: 'bg-amber-100 dark:bg-amber-900/40',
+            };
+        }
+        if (act.includes('SHARE')) {
+            return {
+                label: 'Chia sẻ liên kết',
+                icon: Share2,
+                colorClass: 'text-blue-600 dark:text-blue-400',
+                bgClass: 'bg-blue-100 dark:bg-blue-900/40',
+            };
+        }
+        if (act.includes('RESTORE')) {
+            return {
+                label: 'Khôi phục tệp',
+                icon: RotateCcw,
+                colorClass: 'text-emerald-600 dark:text-emerald-400',
+                bgClass: 'bg-emerald-100 dark:bg-emerald-900/40',
+            };
+        }
+        if (act.includes('TRASH') || act.includes('DELETE')) {
+            return {
+                label: act.includes('PERMANENT') ? 'Xóa vĩnh viễn' : 'Chuyển vào thùng rác',
+                icon: Trash2,
+                colorClass: 'text-rose-600 dark:text-rose-400',
+                bgClass: 'bg-rose-100 dark:bg-rose-900/40',
+            };
+        }
+        if (act.includes('STAR')) {
+            return {
+                label: 'Đánh dấu sao',
+                icon: Star,
+                colorClass: 'text-amber-500 dark:text-amber-400',
+                bgClass: 'bg-amber-100 dark:bg-amber-900/40',
+            };
+        }
+        if (act.includes('COPY')) {
+            return {
+                label: 'Tạo bản sao',
+                icon: Copy,
+                colorClass: 'text-indigo-600 dark:text-indigo-400',
+                bgClass: 'bg-indigo-100 dark:bg-indigo-900/40',
+            };
+        }
+        if (act.includes('VERSION')) {
+            return {
+                label: 'Phiên bản mới',
+                icon: History,
+                colorClass: 'text-purple-600 dark:text-purple-400',
+                bgClass: 'bg-purple-100 dark:bg-purple-900/40',
+            };
+        }
+        if (act.includes('DOWNLOAD')) {
+            return {
+                label: 'Tải xuống',
+                icon: Download,
+                colorClass: 'text-sky-600 dark:text-sky-400',
+                bgClass: 'bg-sky-100 dark:bg-sky-900/40',
+            };
+        }
+        const formatted = action
+            ? action.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
+            : 'Hoạt động';
+        return {
+            label: formatted,
+            icon: ActivityIcon,
+            colorClass: 'text-blue-600 dark:text-blue-400',
+            bgClass: 'bg-blue-100 dark:bg-blue-900/40',
+        };
+    };
+
+    const renderActivityDescription = (log) => {
+        if (!log || !log.details || typeof log.details !== 'object' || Object.keys(log.details).length === 0) {
+            return null;
+        }
+        const d = log.details;
+        const action = (log.action || '').toUpperCase();
+
+        if (action.includes('RENAME')) {
+            if (d.oldName && d.newName) {
+                return `Đổi tên từ "${d.oldName}" thành "${d.newName}"`;
+            }
+            if (d.newName) {
+                return `Đổi tên thành "${d.newName}"`;
+            }
+        }
+
+        if (action.includes('UPLOAD')) {
+            const parts = [];
+            if (d.fileName || d.name) parts.push(`Tệp: "${d.fileName || d.name}"`);
+            if (d.sizeBytes || d.size) parts.push(`Dung lượng: ${formatBytes(d.sizeBytes || d.size)}`);
+            if (d.storageProvider || d.provider) parts.push(`Nơi lưu: ${d.storageProvider || d.provider}`);
+            return parts.length > 0 ? parts.join(' • ') : null;
+        }
+
+        if (action.includes('SHARE')) {
+            const parts = [];
+            if (d.accessLevel) {
+                const accessMap = {
+                    ANYONE_WITH_LINK: 'Bất kỳ ai có link',
+                    RESTRICTED: 'Chỉ định người nhận',
+                };
+                parts.push(`Quyền: ${accessMap[d.accessLevel] || d.accessLevel}`);
+            }
+            if (d.role) {
+                const roleMap = {
+                    VIEWER: 'Xem',
+                    EDITOR: 'Chỉnh sửa',
+                    COMMENTER: 'Nhận xét',
+                };
+                parts.push(`Vai trò: ${roleMap[d.role] || d.role}`);
+            }
+            if (d.expiresAt) {
+                parts.push(`Hạn: ${new Date(d.expiresAt).toLocaleDateString('vi-VN')}`);
+            } else if (d.accessLevel || d.role) {
+                parts.push('Không hết hạn');
+            }
+            return parts.length > 0 ? parts.join(' • ') : 'Tạo liên kết chia sẻ';
+        }
+
+        if (action.includes('VERSION')) {
+            const parts = [];
+            if (d.versionNumber) parts.push(`Phiên bản: v${d.versionNumber}`);
+            if (d.sizeBytes || d.size) parts.push(`Dung lượng: ${formatBytes(d.sizeBytes || d.size)}`);
+            return parts.length > 0 ? parts.join(' • ') : null;
+        }
+
+        if (action.includes('COPY')) {
+            if (d.newName || d.name) {
+                return `Tạo bản sao mới "${d.newName || d.name}"`;
+            }
+        }
+
+        // Generic details format
+        try {
+            const entries = Object.entries(d).filter(([k, v]) => v !== null && v !== undefined && typeof v !== 'object');
+            if (entries.length > 0) {
+                return entries.map(([k, v]) => `${k}: ${v}`).join(' • ');
+            }
+            return JSON.stringify(d);
+        } catch {
+            return null;
+        }
     };
 
     const handleSaveDescription = () => {
@@ -211,12 +400,16 @@ export default function FileInfoDrawer({ isOpen, item, activeTab = 'details', on
                                         </button>
                                     )}
                                     <button
-                                        onClick={(e) => { 
+                                        onClick={(e) => {
                                             e.stopPropagation();
                                             e.preventDefault();
+                                            // Snapshot item trước khi drawer unmount
                                             const currentItem = item;
-                                            onClose?.(); 
-                                            setTimeout(() => onOpenShare?.(currentItem), 50);
+                                            // flushSync: ép React flush onClose() đồng bộ
+                                            // (unmount FileInfoDrawer hoàn toàn) trước khi
+                                            // setShareTargetItem → tránh race condition.
+                                            flushSync(() => onClose?.());
+                                            onOpenShare?.(currentItem);
                                         }}
                                         className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold flex items-center gap-1 shadow-xs transition-all cursor-pointer"
                                     >
@@ -332,30 +525,103 @@ export default function FileInfoDrawer({ isOpen, item, activeTab = 'details', on
                     </>
                 ) : currentTab === 'activity' ? (
                     <div className="space-y-4">
-                        <h4 className="font-bold text-gray-900 dark:text-gray-100 text-xs uppercase tracking-wider text-[11px]">
-                            Lịch sử hoạt động gần đây
-                        </h4>
+                        <div className="flex items-center justify-between">
+                            <h4 className="font-bold text-gray-900 dark:text-gray-100 text-xs uppercase tracking-wider text-[11px]">
+                                Lịch sử hoạt động
+                            </h4>
+                            {activityLogs.length > 0 && !loadingTab && (
+                                <button
+                                    onClick={fetchActivityLogs}
+                                    className="p-1 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                                    title="Làm mới"
+                                >
+                                    <RefreshCw className="w-3.5 h-3.5" />
+                                </button>
+                            )}
+                        </div>
+
                         {loadingTab ? (
-                            <p className="text-xs text-gray-400">Đang tải lịch sử hoạt động...</p>
+                            <div className="flex flex-col items-center justify-center py-10 text-gray-400 space-y-2.5">
+                                <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+                                <p className="text-xs text-gray-400 font-medium">Đang tải lịch sử hoạt động...</p>
+                            </div>
+                        ) : activityError ? (
+                            <div className="p-4 rounded-2xl bg-rose-50/60 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 text-center space-y-2">
+                                <AlertCircle className="w-6 h-6 text-rose-500 dark:text-rose-400 mx-auto" />
+                                <p className="text-xs font-semibold text-rose-800 dark:text-rose-300">
+                                    Không thể tải lịch sử hoạt động
+                                </p>
+                                <p className="text-[11px] text-rose-600 dark:text-rose-400">
+                                    {activityError}
+                                </p>
+                                <button
+                                    onClick={fetchActivityLogs}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 mt-1 bg-rose-100 hover:bg-rose-200 dark:bg-rose-900/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-200 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                                >
+                                    <RefreshCw className="w-3.5 h-3.5" /> Thử lại
+                                </button>
+                            </div>
                         ) : activityLogs.length > 0 ? (
-                            <div className="space-y-3">
-                                {activityLogs.map((log) => (
-                                    <div key={log.id} className="flex gap-3 text-xs p-2.5 rounded-xl bg-gray-50 dark:bg-gray-800/60 border border-gray-100 dark:border-gray-800">
-                                        <div className="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold shrink-0">
-                                            <ActivityIcon className="w-3.5 h-3.5" />
+                            <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1">
+                                {activityLogs.map((log) => {
+                                    const meta = getActivityMeta(log.action);
+                                    const Icon = meta.icon;
+                                    const description = renderActivityDescription(log);
+                                    const dateStr = log.createdAt
+                                        ? new Date(log.createdAt).toLocaleString('vi-VN', {
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                            day: '2-digit',
+                                            month: '2-digit',
+                                            year: 'numeric',
+                                            hour12: false,
+                                        })
+                                        : '--';
+
+                                    return (
+                                        <div
+                                            key={log.id || Math.random()}
+                                            className="flex gap-3 text-xs p-3 rounded-2xl bg-gray-50 dark:bg-gray-800/60 border border-gray-100 dark:border-gray-800 hover:border-gray-200 dark:hover:border-gray-700 transition-colors"
+                                        >
+                                            <div
+                                                className={`w-7 h-7 rounded-xl ${meta.bgClass} ${meta.colorClass} flex items-center justify-center shrink-0 font-bold shadow-xs`}
+                                            >
+                                                <Icon className="w-3.5 h-3.5" />
+                                            </div>
+                                            <div className="flex-1 min-w-0 space-y-1">
+                                                <div className="flex items-center justify-between gap-1">
+                                                    <p className="font-semibold text-gray-800 dark:text-gray-200 truncate">
+                                                        {meta.label}
+                                                    </p>
+                                                    <span className="text-[10px] text-gray-400 font-mono shrink-0">
+                                                        {dateStr}
+                                                    </span>
+                                                </div>
+                                                {description && (
+                                                    <p className="text-[11px] text-gray-600 dark:text-gray-300 leading-relaxed break-words bg-white/60 dark:bg-gray-900/40 px-2 py-1.5 rounded-lg border border-gray-100 dark:border-gray-800/60">
+                                                        {description}
+                                                    </p>
+                                                )}
+                                                {log.userId && (
+                                                    <p className="text-[10px] text-gray-400 truncate">
+                                                        Người thực hiện: <span className="font-mono">{log.userId.length > 16 ? `${log.userId.slice(0, 10)}...` : log.userId}</span>
+                                                    </p>
+                                                )}
+                                            </div>
                                         </div>
-                                        <div className="space-y-0.5">
-                                            <p className="text-gray-800 dark:text-gray-200 font-semibold">
-                                                {log.action?.replace('_', ' ')}
-                                            </p>
-                                            <p className="text-[11px] text-gray-500">{JSON.stringify(log.details || {})}</p>
-                                            <p className="text-[10px] text-gray-400 font-mono">{new Date(log.createdAt).toLocaleString('vi-VN')}</p>
-                                        </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         ) : (
-                            <div className="text-xs text-gray-400 py-4 text-center">Chưa có lịch sử hoạt động nào</div>
+                            <div className="py-8 px-4 text-center">
+                                <div className="w-10 h-10 rounded-2xl bg-gray-100 dark:bg-gray-800/80 flex items-center justify-center mx-auto mb-2 text-gray-400">
+                                    <ActivityIcon className="w-5 h-5 opacity-60" />
+                                </div>
+                                <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">Chưa có hoạt động nào</p>
+                                <p className="text-[11px] text-gray-400 mt-1">
+                                    Chưa có ghi nhận thay đổi nào cho tệp này.
+                                </p>
+                            </div>
                         )}
                     </div>
                 ) : (

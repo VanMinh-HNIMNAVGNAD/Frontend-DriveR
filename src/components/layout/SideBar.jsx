@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 
 export default function Sidebar() {
-  const { activeTab, setActiveTab, isSidebarCollapsed, storageInfo, items } = useFiles();
+  const { activeTab, setActiveTab, isSidebarCollapsed, toggleSidebar, storageInfo, items } = useFiles();
   const [isCleanupOpen, setIsCleanupOpen] = useState(false);
 
   // Counts for badges
@@ -64,10 +64,18 @@ export default function Sidebar() {
 
   return (
     <>
+      {/* Mobile Backdrop */}
+      {!isSidebarCollapsed && (
+        <div 
+          className="md:hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-40 transition-opacity"
+          onClick={() => toggleSidebar()} 
+        />
+      )}
       <aside
-        className={`h-full bg-[#f8fafd] border-r border-gray-100 flex flex-col pt-3 select-none transition-all duration-300 ease-in-out shrink-0 ${
-          isSidebarCollapsed ? 'w-20 px-2' : 'w-64 px-3'
-        }`}
+        className={`bg-[#f8fafd] border-r border-gray-100 flex flex-col pt-3 select-none transition-all duration-300 ease-in-out shrink-0 h-full 
+          fixed md:relative z-50 md:z-0 top-0 left-0
+          ${isSidebarCollapsed ? '-translate-x-full md:translate-x-0 md:w-20 px-2' : 'translate-x-0 w-72 md:w-64 px-3'}
+        `}
       >
         {/* NÚT + MỚI */}
         <div className={`mb-5 flex ${isSidebarCollapsed ? 'justify-center' : 'pl-2 justify-start'}`}>

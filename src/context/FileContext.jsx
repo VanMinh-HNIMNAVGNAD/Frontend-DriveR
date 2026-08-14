@@ -3,6 +3,8 @@ import { useLocation, useNavigate, matchPath } from 'react-router-dom';
 import { filesApi, storageApi, sharingApi, chunkedApi } from '../services/api';
 import { useAuth } from './AuthContext';
 import { useDebounce } from '../hooks/useDebounce';
+import { useUpload } from './UploadContext';
+import { formatBytes } from '../utils/formatFileSize';
 
 const FileContext = createContext();
 
@@ -70,6 +72,29 @@ export function FileProvider({ children }) {
   const [sortField, setSortField] = useState('name'); // 'name' | 'size' | 'type' | 'owner' | 'group' | 'updatedAt' | 'createdAt'
   const [sortDirection, setSortDirection] = useState('asc'); // 'asc' | 'desc'
 
+  // Selection State
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [lastSelectedId, setLastSelectedId] = useState(null);
+
+  // Clipboard State (Cut / Copy / Paste)
+  const [clipboard, setClipboard] = useState({ items: [], mode: null });
+  const [isPasting, setIsPasting] = useState(false);
+
+  // Refs to avoid stale closures in event listeners and asynchronous callbacks
+  const clipboardRef = useRef(clipboard);
+  clipboardRef.current = clipboard;
+
+  const isPastingRef = useRef(isPasting);
+  isPastingRef.current = isPasting;
+
+  const selectedIdsRef = useRef(selectedIds);
+  selectedIdsRef.current = selectedIds;
+
+  const currentFolderIdRef = useRef(currentFolderId);
+  currentFolderIdRef.current = currentFolderId;
+
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
 
   // Storage Analytics State
   const [analytics, setAnalytics] = useState(null);
@@ -91,25 +116,20 @@ export function FileProvider({ children }) {
   const [isInfoDrawerOpen, setIsInfoDrawerOpen] = useState(false);
   const [infoDrawerTab, setInfoDrawerTab] = useState('details');
 
-  // Upload Queue State — mỗi job: { id, fileName, percent, status, error? }
-  // status: 'pending' | 'uploading' | 'confirming' | 'done' | 'error'
-  const [uploadQueue, setUploadQueue] = useState([]);
+  // Upload Queue — delegate hoàn toàn sang UploadContext
+  // FileContext chỉ dùng updateJob/enqueueJob/removeJob/resetJob từ UploadContext
+  const {
+    uploadQueue,
+    setUploadQueue,
+    uploadQueueRef,
+    updateJob,
+    enqueueJob,
+    removeJob,
+    resetJob,
+  } = useUpload();
+
   const activeCountRef = useRef(0);   // số job đang chạy thực sự
   const pendingQueueRef = useRef([]); // mirror của uploadQueue để runner đọc không bị stale
-  const uploadQueueRef = useRef([]);        // mirror mới nhất của uploadQueue, đọc đồng bộ trong updateJob
-  const percentThrottleRef = useRef(new Map()); // jobId -> timeout id, để throttle riêng percent
-  const PERCENT_THROTTLE_MS = 200;          // tối đa ~5 lần setState/giây cho mỗi job
-
-  useEffect(() => {
-    uploadQueueRef.current = uploadQueue;
-  }, [uploadQueue]);
-
-  useEffect(() => {
-    return () => {
-      percentThrottleRef.current.forEach((timeoutId) => clearTimeout(timeoutId));
-      percentThrottleRef.current.clear();
-    };
-  }, []);
 
   const CONCURRENCY = 2;    // 2 file song song
   const CHUNK_THRESHOLD = 10 * 1024 * 1024; // 10MB: file lớn hơn → dùng chunked upload
@@ -216,6 +236,78 @@ export function FileProvider({ children }) {
     setSearchQuery('');
   };
 
+  // ── Selection Functions ──
+
+  const toggleSelect = useCallback((id) => {
+    setSelectedIds((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      return newSet;
+    });
+    setLastSelectedId(id);
+  }, []);
+
+  /**
+   * Chọn khoảng từ lastSelectedId đến endId (theo thứ tự hiển thị: folders trước, files sau).
+   * Nếu không có lastSelectedId, chỉ chọn endId.
+   */
+  const selectRange = useCallback((endId, currentSortedFolders, currentSortedFiles) => {
+    const allIds = [...(currentSortedFolders || []), ...(currentSortedFiles || [])].map((item) => item.id);
+    const startId = lastSelectedId;
+    if (!startId) {
+      setSelectedIds((prev) => { const n = new Set(prev); n.add(endId); return n; });
+      setLastSelectedId(endId);
+      return;
+    }
+    const startIdx = allIds.indexOf(startId);
+    const endIdx = allIds.indexOf(endId);
+    if (startIdx === -1 || endIdx === -1) {
+      setSelectedIds((prev) => { const n = new Set(prev); n.add(endId); return n; });
+      setLastSelectedId(endId);
+      return;
+    }
+    const [from, to] = [Math.min(startIdx, endIdx), Math.max(startIdx, endIdx)];
+    const idsToSelect = allIds.slice(from, to + 1);
+    setSelectedIds((prev) => {
+      const n = new Set(prev);
+      idsToSelect.forEach((id) => n.add(id));
+      return n;
+    });
+    setLastSelectedId(endId);
+  }, [lastSelectedId]);
+
+  const selectAll = useCallback((currentSortedFolders, currentSortedFiles) => {
+    const allIds = [...(currentSortedFolders || []), ...(currentSortedFiles || [])].map((item) => item.id);
+    setSelectedIds(new Set(allIds));
+  }, []);
+
+  const deselectAll = useCallback(() => {
+    setSelectedIds(new Set());
+    setLastSelectedId(null);
+  }, []);
+
+  const isSelected = useCallback((id) => selectedIds.has(id), [selectedIds]);
+
+  const getSelectedItems = useCallback(
+    (currentSortedFolders, currentSortedFiles) =>
+      [...(currentSortedFolders || []), ...(currentSortedFiles || [])].filter((item) => selectedIds.has(item.id)),
+    [selectedIds]
+  );
+
+  // Reset selection khi fetch lại data (tab thay đổi, folder thay đổi)
+  // Giữ lại selection nếu item vẫn tồn tại
+  useEffect(() => {
+    if (selectedIds.size > 0) {
+      const existingIds = new Set(items.map((i) => i.id));
+      setSelectedIds((prev) => {
+        const filtered = new Set([...prev].filter((id) => existingIds.has(id)));
+        return filtered;
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
+
   const folders = items.filter((item) => item.type === 'folder');
   const files = items.filter((item) => item.type === 'file');
 
@@ -254,20 +346,12 @@ export function FileProvider({ children }) {
     });
   }, [files, sortField, sortDirection]);
 
-  const formatStorageUsed = (bytes) => {
-    if (!bytes || bytes <= 0) return '0.00 MB';
-    if (bytes < 1024 * 1024 * 1024) {
-      return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
-    }
-    return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
-  };
-
   // Storage Info Object
   const storageInfo = {
     usedBytes: analytics ? analytics.usedBytes : 0,
     usedGB: analytics ? analytics.usedGB : '0.00',
     usedMB: analytics ? (analytics.usedBytes / (1024 * 1024)).toFixed(2) : '0.00',
-    usedFormatted: analytics ? formatStorageUsed(analytics.usedBytes) : '0.00 MB',
+    usedFormatted: analytics ? formatBytes(analytics.usedBytes) : '0 Bytes',
     totalGB: analytics ? analytics.limitGB : '2.00',
     percentage: analytics ? analytics.percentageUsed : 0,
     categories: analytics?.categories || {},
@@ -392,40 +476,170 @@ export function FileProvider({ children }) {
     }
   };
 
-  // --- Upload Queue Engine ---
+  // ── Cut / Copy / Paste Actions (Snapshot-based Clipboard) ──
 
-  /** Cập nhật 1 job trong queue theo id */
-  const updateJob = (id, patch) => {
-    const isPercentOnlyUpdate =
-      Object.keys(patch).every((key) => key === 'percent') && Object.keys(patch).length > 0;
+  const cutItems = useCallback((ids) => {
+    const targetIds = ids && ids.length > 0 ? ids : Array.from(selectedIdsRef.current);
+    if (targetIds.length === 0) return;
 
-    const applyNow = () => {
-      setUploadQueue((prev) =>
-        prev.map((job) => (job.id === id ? { ...job, ...patch } : job)),
-      );
+    // Snapshot dữ liệu ngay tại thời điểm cut từ items state hiện tại
+    const snapshot = itemsRef.current
+      .filter((item) => targetIds.includes(item.id))
+      .map((item) => ({
+        id: item.id,
+        parentId: item.parentId ?? null,
+        name: item.name,
+        type: item.type,
+      }));
+
+    if (snapshot.length === 0) return;
+
+    setClipboard({
+      items: snapshot,
+      mode: 'cut',
+    });
+  }, []);
+
+  const copyItems = useCallback((ids) => {
+    const targetIds = ids && ids.length > 0 ? ids : Array.from(selectedIdsRef.current);
+    if (targetIds.length === 0) return;
+
+    // Snapshot dữ liệu ngay tại thời điểm copy từ items state hiện tại
+    const snapshot = itemsRef.current
+      .filter((item) => targetIds.includes(item.id))
+      .map((item) => ({
+        id: item.id,
+        parentId: item.parentId ?? null,
+        name: item.name,
+        type: item.type,
+      }));
+
+    if (snapshot.length === 0) return;
+
+    setClipboard({
+      items: snapshot,
+      mode: 'copy',
+    });
+  }, []);
+
+  const clearClipboard = useCallback(() => {
+    setClipboard({ items: [], mode: null });
+  }, []);
+
+  const pasteItems = useCallback(
+    async (targetParentId) => {
+      const currentClip = clipboardRef.current;
+      if (!currentClip.mode || currentClip.items.length === 0) return;
+      if (isPastingRef.current) return; // Ngăn người dùng click liên tục gây trùng request
+
+      const destId = targetParentId !== undefined ? targetParentId : (currentFolderIdRef.current || null);
+
+      // No-op check dùng snapshot đã lưu: nếu mode cut và paste vào đúng folder ban đầu thì bỏ qua
+      const toProcess =
+        currentClip.mode === 'cut'
+          ? currentClip.items.filter((entry) => (entry.parentId ?? null) !== (destId ?? null))
+          : currentClip.items;
+
+      // Nếu cut vào chính nơi cũ -> hoàn tất êm, xoá clipboard
+      if (toProcess.length === 0) {
+        if (currentClip.mode === 'cut') {
+          clearClipboard();
+        }
+        return;
+      }
+
+      setIsPasting(true);
+      try {
+        const results = await Promise.allSettled(
+          toProcess.map(async (entry) => {
+            if (currentClip.mode === 'cut') {
+              return await filesApi.moveItem(entry.id, { targetParentId: destId });
+            } else {
+              return await filesApi.copyItem(entry.id, { targetParentId: destId });
+            }
+          })
+        );
+
+        const rejected = [];
+        let fulfilledCount = 0;
+
+        results.forEach((res, idx) => {
+          if (res.status === 'fulfilled') {
+            fulfilledCount++;
+          } else {
+            rejected.push({
+              name: toProcess[idx].name,
+              reason: res.reason?.message || 'Lỗi không xác định',
+            });
+          }
+        });
+
+        if (rejected.length > 0) {
+          const errorDetails = rejected.map((r) => `• ${r.name}: ${r.reason}`).join('\n');
+          alert(`Có ${rejected.length}/${toProcess.length} mục xử lý thất bại:\n${errorDetails}`);
+        }
+
+        // Đồng bộ lại danh sách tệp & thông số lưu trữ
+        await fetchFiles();
+        await fetchAnalytics();
+
+        // Nếu là cut thì xoá clipboard sau khi paste (kể cả có lỗi một phần)
+        if (currentClip.mode === 'cut') {
+          clearClipboard();
+        }
+        // Nếu là copy: giữ nguyên clipboard để paste nhiều lần
+      } catch (err) {
+        console.error('Lỗi trong quá trình dán:', err);
+        alert('Đã xảy ra lỗi khi dán: ' + (err.message || err));
+      } finally {
+        setIsPasting(false);
+      }
+    },
+    [clearClipboard, fetchFiles, fetchAnalytics]
+  );
+
+  // ── Global Keyboard Shortcuts Listener ──
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const activeTag = document.activeElement?.tagName?.toLowerCase();
+      const isInputActive =
+        activeTag === 'input' ||
+        activeTag === 'textarea' ||
+        document.activeElement?.isContentEditable;
+
+      // Không can thiệp nếu người dùng đang nhập văn bản trong ô input/textarea
+      if (isInputActive) return;
+
+      const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+
+      if (isCtrlOrCmd && (e.key === 'c' || e.key === 'C')) {
+        if (selectedIdsRef.current.size > 0) {
+          e.preventDefault();
+          copyItems();
+        }
+      } else if (isCtrlOrCmd && (e.key === 'x' || e.key === 'X')) {
+        if (selectedIdsRef.current.size > 0) {
+          e.preventDefault();
+          cutItems();
+        }
+      } else if (isCtrlOrCmd && (e.key === 'v' || e.key === 'V')) {
+        if (clipboardRef.current.items.length > 0 && !isPastingRef.current) {
+          e.preventDefault();
+          pasteItems();
+        }
+      } else if (e.key === 'Escape') {
+        if (clipboardRef.current.mode === 'cut') {
+          clearClipboard();
+        }
+      }
     };
 
-    // Update đổi status/fileName/error: áp dụng ngay, không throttle
-    if (!isPercentOnlyUpdate) {
-      const existingTimeout = percentThrottleRef.current.get(id);
-      if (existingTimeout) {
-        clearTimeout(existingTimeout);
-        percentThrottleRef.current.delete(id);
-      }
-      applyNow();
-      return;
-    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [copyItems, cutItems, pasteItems, clearClipboard]);
 
-    // Update chỉ đổi percent: throttle để giảm tần suất re-render
-    if (percentThrottleRef.current.has(id)) return; // đã có 1 update đang chờ, bỏ qua update này
-
-    const timeoutId = setTimeout(() => {
-      percentThrottleRef.current.delete(id);
-      applyNow();
-    }, PERCENT_THROTTLE_MS);
-
-    percentThrottleRef.current.set(id, timeoutId);
-  };
+  // --- Upload Queue Engine ---
+  // updateJob, enqueueJob, removeJob, resetJob — được inject từ UploadContext (xem trên)
 
   /** Chunked upload cho file > 10MB — resume được sau khi F5/đóng tab */
   const runChunkedUploadJob = useCallback(
@@ -536,7 +750,7 @@ export function FileProvider({ children }) {
         if (fileObj.size > CHUNK_THRESHOLD) {
           await runChunkedUploadJob(job);
           updateJob(id, { percent: 100, status: 'done' });
-          setTimeout(() => setUploadQueue((prev) => prev.filter((j) => j.id !== id)), 5000);
+          setTimeout(() => removeJob(id), 5000);
           fetchFiles();
           fetchAnalytics();
           return;
@@ -598,9 +812,7 @@ export function FileProvider({ children }) {
 
         updateJob(id, { percent: 100, status: 'done' });
         // Tự xóa job done sau 5 giây
-        setTimeout(() => {
-          setUploadQueue((prev) => prev.filter((j) => j.id !== id));
-        }, 5000);
+        setTimeout(() => removeJob(id), 5000);
 
         // Refresh sau khi 1 file xong
         fetchFiles();
@@ -648,12 +860,12 @@ export function FileProvider({ children }) {
         percent: 0,
         status: 'pending',
       };
-      // Thêm vào state (UI) và ref (runner)
-      setUploadQueue((prev) => [...prev, job]);
+      // Thêm vào UploadContext (UI) và ref (runner)
+      enqueueJob(job);
       pendingQueueRef.current.push(job);
       dispatchRunner();
     },
-    [currentFolderId, dispatchRunner],
+    [currentFolderId, dispatchRunner, enqueueJob],
   );
 
   /**
@@ -662,23 +874,18 @@ export function FileProvider({ children }) {
    */
   const retryUploadJob = useCallback(
     (jobId) => {
-      setUploadQueue((prev) => {
-        const job = prev.find((j) => j.id === jobId && j.status === 'error');
-        if (!job) return prev;
+      const job = uploadQueueRef.current.find((j) => j.id === jobId && j.status === 'error');
+      if (!job) return;
 
-        // Reset job về pending trong state
-        const resetJob = { ...job, percent: 0, status: 'pending', error: undefined, renamedFrom: undefined };
-        const nextQueue = prev.map((j) => (j.id === jobId ? resetJob : j));
-
-        // Đưa lại vào pendingQueueRef để runner xử lý
-        pendingQueueRef.current.push(resetJob);
-        // Dispatch runner ngay (setTimeout để state flush trước)
-        setTimeout(() => dispatchRunner(), 0);
-
-        return nextQueue;
-      });
+      const retriedJob = { ...job, percent: 0, status: 'pending', error: undefined, renamedFrom: undefined };
+      // Reset job trong UploadContext state
+      resetJob(jobId, { percent: 0, status: 'pending', error: undefined, renamedFrom: undefined });
+      // Đưa lại vào pendingQueueRef để runner xử lý
+      pendingQueueRef.current.push(retriedJob);
+      // Dispatch runner (setTimeout để state flush trước)
+      setTimeout(() => dispatchRunner(), 0);
     },
-    [dispatchRunner],
+    [dispatchRunner, uploadQueueRef, resetJob],
   );
 
   // Backward-compat alias — code cũ gọi uploadFile vẫn hoạt động
@@ -802,7 +1009,6 @@ export function FileProvider({ children }) {
         getFileTextContent,
         createShareLink,
         uploadQueue,
-        setUploadQueue,
         infoDrawerItem,
         isInfoDrawerOpen,
         infoDrawerTab,
@@ -811,6 +1017,23 @@ export function FileProvider({ children }) {
         previewItem,
         openPreview,
         closePreview,
+        // Selection
+        selectedIds,
+        selectedCount: selectedIds.size,
+        lastSelectedId,
+        toggleSelect,
+        selectRange,
+        selectAll,
+        deselectAll,
+        isSelected,
+        getSelectedItems,
+        // Clipboard (Cut / Copy / Paste)
+        clipboard,
+        isPasting,
+        cutItems,
+        copyItems,
+        clearClipboard,
+        pasteItems,
       }}
     >
       {children}

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import FileListView from '../components/file-manager/FileListView';
 import FileGridView from '../components/file-manager/FileGridView';
+import FileFilterBar from '../components/common/FileFilterBar';
 import { useFiles } from '../context/FileContext';
 import { Clock, List, LayoutGrid } from 'lucide-react';
 
@@ -39,7 +40,8 @@ export default function RecentPage() {
                 </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto">
+            {/* View Container */}
+            <div className="flex-1 overflow-y-auto mt-2">
                 {viewMode === 'grid' ? <FileGridView /> : <FileListView />}
             </div>
         </div>

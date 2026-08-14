@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react';
 import { storageApi } from '../../services/api';
+import { formatBytes } from '../../utils/formatFileSize';
+import * as XLSX from 'xlsx';
+import mammoth from 'mammoth';
 import { 
     FileText, 
     FileSpreadsheet, 
@@ -13,7 +16,8 @@ import {
     Layers, 
     Star, 
     MoreVertical, 
-    Eye 
+    CheckSquare,
+    Square,
 } from 'lucide-react';
 
 const fileTypeStyles = {
@@ -107,44 +111,176 @@ function getFileTypeCategory(name = '') {
     if (n.endsWith('.fig')) return 'figma';
     if (n.endsWith('.docx') || n.endsWith('.doc') || n.endsWith('.txt') || n.endsWith('.pptx') || n.endsWith('.md')) return 'doc';
     if (n.endsWith('.zip') || n.endsWith('.rar') || n.endsWith('.7z')) return 'archive';
-    if (n.endsWith('.exe') || n.endsWith('.js') || n.endsWith('.jsx') || n.endsWith('.ts') || n.endsWith('.py')) return 'code';
+    // Mở rộng: code + json + yaml + xml + shell + nhiều ngôn ngữ khác
+    if (
+        n.endsWith('.js') || n.endsWith('.jsx') || n.endsWith('.ts') || n.endsWith('.tsx') ||
+        n.endsWith('.py') || n.endsWith('.java') || n.endsWith('.c') || n.endsWith('.cpp') ||
+        n.endsWith('.cs') || n.endsWith('.go') || n.endsWith('.rb') || n.endsWith('.php') ||
+        n.endsWith('.sh') || n.endsWith('.bash') || n.endsWith('.zsh') ||
+        n.endsWith('.json') || n.endsWith('.xml') || n.endsWith('.yaml') || n.endsWith('.yml') ||
+        n.endsWith('.toml') || n.endsWith('.ini') || n.endsWith('.env') ||
+        n.endsWith('.css') || n.endsWith('.scss') || n.endsWith('.html') || n.endsWith('.htm') ||
+        n.endsWith('.vue') || n.endsWith('.svelte') || n.endsWith('.kt') || n.endsWith('.swift') ||
+        n.endsWith('.rs') || n.endsWith('.dart') || n.endsWith('.lua') || n.endsWith('.exe')
+    ) return 'code';
     return 'default';
 }
 
-function formatBytes(bytes) {
-    if (!bytes) return '--';
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    return parseFloat((bytes / Math.pow(1024, i)).toFixed(1)) + ' ' + sizes[i];
-}
+// Giới hạn dung lượng để tải thumbnail: 10MB
+const MAX_THUMBNAIL_SIZE = 10 * 1024 * 1024;
 
-export default function FileCard({ file, onDoubleClick, onContextMenu, onStarToggle, onOpenInfo }) {
+export default function FileCard({ file, onDoubleClick, onContextMenu, onStarToggle, onOpenInfo, isSelected, isCut = false, onToggleSelect, onSelectRange }) {
     const cat = getFileTypeCategory(file?.name);
     const style = fileTypeStyles[cat] || fileTypeStyles.default;
-    const [thumbUrl, setThumbUrl] = useState(null);
-    const isSelected = false; // TODO: Implement selection logic (B18)
+
+    // thumbType: 'image' | 'video' | 'pdf-blob' | 'sheet' | 'text' | null
+    const [thumbType, setThumbType] = useState(null);
+    const [thumbUrl, setThumbUrl] = useState(null);     // image, video, pdf-blob
+    const [textContent, setTextContent] = useState(null); // text, code, docx
+    const [sheetData, setSheetData] = useState(null);   // xlsx rows [row][col]
 
     useEffect(() => {
-        if (cat === 'image' && file?.id) {
-            let isMounted = true;
+        if (!file?.id) return;
+
+        // Nếu file quá lớn (> 10MB) → fallback icon ngay, không gọi API, không hiện loading
+        const sizeOk = !file.size || file.size <= MAX_THUMBNAIL_SIZE;
+        if (!sizeOk) return;
+
+        let isMounted = true;
+        let blobUrlToRevoke = null;
+
+        const n = file.name.toLowerCase();
+
+        // ── Image / Video: dùng presigned URL trực tiếp ──────────────
+        if (cat === 'image' || cat === 'video') {
             storageApi.getPreviewUrl(file.id)
                 .then(res => {
-                    if (isMounted && res?.previewUrl) setThumbUrl(res.previewUrl);
+                    if (isMounted && res?.previewUrl) {
+                        setThumbUrl(res.previewUrl);
+                        setThumbType(cat); // 'image' | 'video'
+                    }
                 })
                 .catch(() => {});
-            return () => { isMounted = false; };
+
+        // ── PDF: fetch binary → Blob URL (tránh download popup của R2) ──
+        } else if (cat === 'pdf') {
+            (async () => {
+                try {
+                    const res = await storageApi.getPreviewUrl(file.id);
+                    if (!res?.previewUrl || !isMounted) return;
+                    const response = await fetch(res.previewUrl);
+                    if (!response.ok || !isMounted) return;
+                    const buffer = await response.arrayBuffer();
+                    if (!isMounted) return;
+                    const blob = new Blob([buffer], { type: 'application/pdf' });
+                    blobUrlToRevoke = URL.createObjectURL(blob);
+                    setThumbUrl(blobUrlToRevoke);
+                    setThumbType('pdf-blob');
+                } catch { /* fallback icon */ }
+            })();
+
+        // ── XLSX / CSV: fetch binary → SheetJS parse → mini table ──
+        } else if (cat === 'sheet') {
+            (async () => {
+                try {
+                    const res = await storageApi.getPreviewUrl(file.id);
+                    if (!res?.previewUrl || !isMounted) return;
+                    const response = await fetch(res.previewUrl);
+                    if (!response.ok || !isMounted) return;
+                    const buffer = await response.arrayBuffer();
+                    if (!isMounted) return;
+                    const wb = XLSX.read(buffer, { type: 'array' });
+                    const ws = wb.Sheets[wb.SheetNames[0]];
+                    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+                    if (isMounted && rows.length > 0) {
+                        setSheetData(rows.slice(0, 4)); // tối đa 4 hàng đầu
+                        setThumbType('sheet');
+                    }
+                } catch { /* fallback icon */ }
+            })();
+
+        // ── DOCX / DOC: fetch binary → mammoth → text ──
+        } else if (cat === 'doc' && (n.endsWith('.docx') || n.endsWith('.doc'))) {
+            (async () => {
+                try {
+                    const res = await storageApi.getPreviewUrl(file.id);
+                    if (!res?.previewUrl || !isMounted) return;
+                    const response = await fetch(res.previewUrl);
+                    if (!response.ok || !isMounted) return;
+                    const buffer = await response.arrayBuffer();
+                    if (!isMounted) return;
+                    const result = await mammoth.extractRawText({ arrayBuffer: buffer });
+                    if (isMounted && result?.value?.trim()) {
+                        setTextContent(result.value.slice(0, 150));
+                        setThumbType('text');
+                    }
+                } catch { /* fallback icon */ }
+            })();
+
+        // ── TXT / MD: gọi getFileTextContent (backend đã trả text sẵn) ──
+        } else if (cat === 'doc' && (n.endsWith('.txt') || n.endsWith('.md'))) {
+            storageApi.getFileTextContent(file.id)
+                .then(res => {
+                    if (isMounted && res?.content) {
+                        setTextContent(res.content.slice(0, 150));
+                        setThumbType('text');
+                    }
+                })
+                .catch(() => {});
+
+        // ── Code / JSON / YAML / XML / Shell / ... → text preview ──
+        } else if (cat === 'code') {
+            storageApi.getFileTextContent(file.id)
+                .then(res => {
+                    if (isMounted && res?.content) {
+                        setTextContent(res.content.slice(0, 150));
+                        setThumbType('text');
+                    }
+                })
+                .catch(() => {});
         }
-    }, [cat, file?.id]);
+        // archive, audio, database, figma, pptx, default → fallback icon, không gọi API
+
+        return () => {
+            isMounted = false;
+            if (blobUrlToRevoke) URL.revokeObjectURL(blobUrlToRevoke);
+        };
+    }, [cat, file?.id, file?.size]);
 
     return (
         <div
             onDoubleClick={() => onDoubleClick && onDoubleClick(file)}
             onContextMenu={(e) => onContextMenu && onContextMenu(e, file)}
-            className={`group relative flex flex-col justify-between p-3.5 rounded-2xl cursor-pointer transition-all duration-200 border shadow-sm hover:shadow-md hover:-translate-y-0.5 h-52 ${isSelected ? 'ring-2 ring-blue-500 bg-blue-50' : style.bg}`}
+            className={`group relative flex flex-col justify-between p-3.5 rounded-2xl cursor-pointer transition-all duration-200 border shadow-sm hover:shadow-md hover:-translate-y-0.5 h-52 ${
+                isCut ? 'opacity-50 border-dashed' : ''
+            } ${isSelected ? 'ring-2 ring-blue-500 border-blue-300 bg-blue-50' : style.bg}`}
         >
+            {/* Checkbox top-left – only this triggers selection */}
+            <button
+                onClick={(e) => {
+                    e.stopPropagation();
+                    if (e.shiftKey) {
+                        e.preventDefault();
+                        onSelectRange && onSelectRange(file.id);
+                    } else {
+                        onToggleSelect && onToggleSelect(file.id);
+                    }
+                }}
+                className={`absolute top-2 left-2 z-20 p-0.5 rounded transition-all ${
+                    isSelected
+                        ? 'opacity-100 text-blue-600'
+                        : 'opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600'
+                }`}
+                title={isSelected ? 'Bo chon' : 'Chon'}
+            >
+                {isSelected
+                    ? <CheckSquare className="w-4 h-4" />
+                    : <Square className="w-4 h-4" />}
+            </button>
+
             {/* Header: Title & Actions */}
             <div className="flex items-start justify-between gap-2 z-10">
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="flex items-center gap-2 min-w-0 pl-4">
                     {style.icon}
                     <span className="text-sm font-semibold text-gray-900 truncate" title={file.name}>
                         {file.name}
@@ -157,61 +293,93 @@ export default function FileCard({ file, onDoubleClick, onContextMenu, onStarTog
                             onStarToggle && onStarToggle(file.id);
                         }}
                         className="p-1 text-gray-400 hover:text-amber-500 rounded-full hover:bg-white/60 transition-colors"
-                        title={file.isStarred ? 'Bỏ đánh dấu sao' : 'Đánh dấu sao'}
+                        title={file.isStarred ? 'Bo danh dau sao' : 'Danh dau sao'}
                     >
                         <Star className={`w-4 h-4 ${file.isStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
                     </button>
                     <button
                         onClick={(e) => onContextMenu && onContextMenu(e, file)}
                         className="p-1 text-gray-400 hover:text-gray-700 rounded-full hover:bg-white/60 transition-colors"
-                        title="Tùy chọn tệp"
+                        title="Tuy chon tep"
                     >
                         <MoreVertical className="w-4 h-4" />
                     </button>
                 </div>
             </div>
 
-            {/* Thumbnail Preview Mock */}
-            <div className="flex-1 my-2.5 rounded-xl bg-white/90 border border-gray-100/80 flex flex-col items-center justify-center p-3 text-center overflow-hidden relative group-hover:border-blue-200 transition-colors">
-                {cat === 'image' ? (
-                    <div className="w-full h-full flex items-center justify-center bg-purple-50/50 rounded-lg overflow-hidden relative">
-                        {thumbUrl ? (
-                            <img
-                                src={thumbUrl}
-                                alt={file.name}
-                                className="w-full h-full object-cover rounded-lg group-hover:scale-105 transition-transform duration-300"
-                            />
-                        ) : (
-                            <div className="flex flex-col items-center justify-center text-purple-600">
-                                <ImageIcon className="w-8 h-8 mb-1 opacity-80 animate-pulse" />
-                                <span className="text-[11px] font-medium opacity-75">Đang tải ảnh...</span>
-                            </div>
-                        )}
+            {/* Thumbnail Preview */}
+            <div className="flex-1 my-2.5 rounded-xl bg-white/90 border border-gray-100/80 flex flex-col items-center justify-center p-1.5 text-center overflow-hidden relative group-hover:border-blue-200 transition-colors">
+                {thumbType === 'image' && thumbUrl ? (
+                    /* ── Ảnh ── */
+                    <img
+                        src={thumbUrl}
+                        alt={file.name}
+                        className="w-full h-full object-cover rounded-lg group-hover:scale-105 transition-transform duration-300"
+                    />
+
+                ) : thumbType === 'video' && thumbUrl ? (
+                    /* ── Video frame đầu, không autoplay, không cho click ── */
+                    <video
+                        src={thumbUrl}
+                        muted
+                        preload="metadata"
+                        className="w-full h-full object-cover rounded-lg pointer-events-none"
+                        onLoadedMetadata={(e) => { e.target.currentTime = 1; }}
+                    />
+
+                ) : thumbType === 'pdf-blob' && thumbUrl ? (
+                    /* ── PDF via Blob URL → inline, không bao giờ download popup ── */
+                    <iframe
+                        src={`${thumbUrl}#toolbar=0&navpanes=0&scrollbar=0&page=1&view=FitH`}
+                        title={file.name}
+                        className="w-full h-full rounded-lg pointer-events-none border-0"
+                    />
+
+                ) : thumbType === 'sheet' && sheetData ? (
+                    /* ── XLSX/CSV mini table ── */
+                    <div className="w-full h-full rounded-lg overflow-hidden bg-emerald-50/60 p-1">
+                        <table className="w-full text-left border-collapse" style={{ fontSize: '6px', lineHeight: '1.2' }}>
+                            <tbody>
+                                {sheetData.map((row, ri) => (
+                                    <tr key={ri} className={ri === 0 ? 'bg-emerald-100/80 font-bold' : ''}>
+                                        {Array.from({ length: Math.min(row.length, 5) }).map((_, ci) => (
+                                            <td
+                                                key={ci}
+                                                className="border border-emerald-200/50 px-0.5 py-px truncate text-emerald-900 opacity-80"
+                                                style={{ maxWidth: '30px' }}
+                                            >
+                                                {String(row[ci] ?? '').slice(0, 8)}
+                                            </td>
+                                        ))}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
-                ) : cat === 'video' ? (
-                    <div className="w-full h-full flex flex-col items-center justify-center bg-violet-50/60 rounded-lg text-violet-600">
-                        <Video className="w-8 h-8 mb-1 opacity-80" />
-                        <span className="text-[11px] font-medium opacity-75">Video Player</span>
+
+                ) : thumbType === 'text' && textContent ? (
+                    /* ── Text / Code / JSON / DOCX ── */
+                    <div className={`w-full h-full rounded-lg p-2 overflow-hidden ${style.previewBg}`}>
+                        <pre
+                            className="text-[8px] font-mono leading-tight opacity-60 whitespace-pre-wrap break-all text-left"
+                            style={{ maxHeight: '100%', overflow: 'hidden' }}
+                        >
+                            {textContent}
+                        </pre>
                     </div>
+
                 ) : (
-                    <div className={`w-full h-full rounded-lg flex flex-col justify-between p-2.5 ${style.previewBg}`}>
-                        <div className="flex justify-between items-center text-[11px] font-mono opacity-70">
-                            <span>FILE PREVIEW</span>
-                            <Eye className="w-3.5 h-3.5" />
-                        </div>
-                        <div className="space-y-1 my-auto">
-                            <div className="h-1.5 bg-current opacity-20 rounded w-full"></div>
-                            <div className="h-1.5 bg-current opacity-20 rounded w-4/5"></div>
-                            <div className="h-1.5 bg-current opacity-20 rounded w-2/3"></div>
-                        </div>
-                        <div className="text-[10px] font-semibold text-right opacity-80">
-                            {style.label}
-                        </div>
+                    /* ── Fallback: icon mặc định (không có chữ "Đang tải...") ── */
+                    <div className={`w-full h-full rounded-lg flex flex-col items-center justify-center gap-2 ${style.previewBg}`}>
+                        <div className="opacity-30 scale-150">{style.icon}</div>
+                        <span className="text-[10px] font-semibold opacity-40 tracking-wide uppercase">
+                            {file.name.split('.').pop() || 'FILE'}
+                        </span>
                     </div>
                 )}
             </div>
 
-            {/* Footer: Metadata & Size */}
+            {/* Footer */}
             <div className="flex items-center justify-between text-xs text-gray-500 pt-1 border-t border-gray-200/50">
                 <span className={`px-2 py-0.5 rounded-full font-medium text-[11px] ${style.badgeBg}`}>
                     {file.name.split('.').pop()?.toUpperCase() || 'FILE'}

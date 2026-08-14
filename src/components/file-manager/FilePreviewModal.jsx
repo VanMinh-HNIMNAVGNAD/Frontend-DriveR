@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { formatBytes } from '../../utils/formatFileSize';
 import { 
   X, 
   ZoomIn, 
@@ -17,6 +18,7 @@ import {
 import { useFiles } from '../../context/FileContext';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import mammoth from 'mammoth';
 
 export default function FilePreviewModal({ item, onClose }) {
   const { getPreviewUrl, getDownloadUrl, getFileTextContent } = useFiles();
@@ -100,6 +102,12 @@ export default function FilePreviewModal({ item, onClose }) {
   const isAudio = mime.startsWith('audio/') || /\.(mp3|wav|ogg|m4a)$/i.test(item.name);
   const isPdf = mime.includes('pdf') || /\.pdf$/i.test(item.name);
   const isCodeOrText = (mime.startsWith('text/') || /\.(js|jsx|ts|tsx|py|html|css|json|sql|md|txt|xml|yaml|yml|sh|env|conf|log|c|cpp|h|hpp|java|go|rs|kt|php|vue|svelte|cs)$/i.test(item.name)) && Number(item.sizeBytes) <= 5 * 1024 * 1024;
+  const isDocx = (
+    mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    mime === 'application/msword' ||
+    /\.docx$/i.test(item.name)
+  ) && Number(item.sizeBytes) <= 8 * 1024 * 1024;
+
   const [copied, setCopied] = useState(false);
 
   const handleCopyText = () => {
@@ -126,14 +134,48 @@ export default function FilePreviewModal({ item, onClose }) {
     }
   }, [isCodeOrText, item]);
 
-  const formatSize = (bytes) => {
-    const b = Number(bytes || 0);
-    if (b === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(b) / Math.log(k));
-    return parseFloat((b / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
+  // State & Effect để tải và convert DOCX bằng mammoth.js
+  const [docxHtml, setDocxHtml] = useState(null);
+  const [docxLoading, setDocxLoading] = useState(false);
+  const [docxError, setDocxError] = useState(null);
+
+  useEffect(() => {
+    if (!isDocx || !url) return;
+
+    let isMounted = true;
+    setDocxLoading(true);
+    setDocxError(null);
+    setDocxHtml(null);
+
+    const loadDocx = async () => {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error('Không thể tải tệp Word từ đám mây.');
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        const result = await mammoth.convertToHtml({ arrayBuffer });
+        if (isMounted) {
+          setDocxHtml(result.value || '<p class="text-slate-400 italic">Tài liệu không có nội dung văn bản.</p>');
+        }
+      } catch (err) {
+        if (isMounted) {
+          console.error('[DOCX Preview Error]', err);
+          setDocxError(err.message || 'Lỗi khi giải mã và chuyển đổi tệp Word (.docx)');
+        }
+      } finally {
+        if (isMounted) {
+          setDocxLoading(false);
+        }
+      }
+    };
+
+    loadDocx();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isDocx, url]);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-slate-950/90 backdrop-blur-xl animate-in fade-in duration-200 text-white select-none">
@@ -148,7 +190,7 @@ export default function FilePreviewModal({ item, onClose }) {
               {item.name}
             </h3>
             <div className="flex items-center gap-2 text-xs text-slate-400">
-              <span>{formatSize(item.sizeBytes)}</span>
+              <span>{formatBytes(item.sizeBytes)}</span>
               <span>•</span>
               <span className="capitalize">{item.storageProvider?.replace('_', ' ') || 'Google Cloud'}</span>
             </div>
@@ -264,7 +306,7 @@ export default function FilePreviewModal({ item, onClose }) {
                 </div>
                 <div>
                   <h4 className="font-bold text-lg text-white mb-1">{item.name}</h4>
-                  <p className="text-xs text-slate-400">{formatSize(item.sizeBytes)}</p>
+                  <div className="text-[13px] text-white/50">{item.sizeBytes ? formatBytes(item.sizeBytes) : 'Không xác định'}</div>
                 </div>
                 <audio src={url} controls autoPlay className="w-full" />
               </div>
@@ -273,6 +315,41 @@ export default function FilePreviewModal({ item, onClose }) {
             {isPdf && (
               <div className="w-full h-full max-w-5xl rounded-2xl overflow-hidden bg-white shadow-2xl">
                 <iframe src={url} title={item.name} className="w-full h-full border-none" />
+              </div>
+            )}
+
+            {isDocx && (
+              <div className="w-full h-full max-w-5xl rounded-2xl overflow-hidden bg-[#0d1117] border border-white/10 shadow-2xl flex flex-col">
+                <div className="px-4 py-2.5 bg-slate-900 border-b border-white/10 text-xs font-mono text-slate-400 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" />
+                    <span className="font-semibold text-slate-200">{item.name}</span>
+                  </div>
+                  <span>Word Document • {formatBytes(item.sizeBytes)}</span>
+                </div>
+                <div className="flex-1 overflow-auto p-4 sm:p-8 bg-slate-950/60 flex justify-center">
+                  {docxLoading ? (
+                    <div className="flex flex-col items-center justify-center gap-3 text-slate-400 py-16">
+                      <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                      <p className="text-sm font-medium">Đang chuyển đổi tài liệu Word...</p>
+                    </div>
+                  ) : docxError ? (
+                    <div className="flex flex-col items-center justify-center gap-3 p-6 text-center max-w-md my-auto">
+                      <p className="text-sm text-red-300 font-medium">{docxError}</p>
+                      <button
+                        onClick={handleDownload}
+                        className="px-4 py-2 bg-white/10 hover:bg-white/20 text-xs font-semibold rounded-xl text-white transition-all"
+                      >
+                        Tải tệp về máy để xem
+                      </button>
+                    </div>
+                  ) : (
+                    <div
+                      className="w-full max-w-3xl bg-white text-slate-900 p-8 sm:p-12 rounded-xl shadow-2xl min-h-full h-fit prose prose-slate max-w-none docx-preview-content [&_table]:w-full [&_table]:border-collapse [&_table]:my-4 [&_td]:border [&_td]:border-slate-300 [&_td]:p-2 [&_th]:border [&_th]:border-slate-300 [&_th]:p-2 [&_th]:bg-slate-100 [&_p]:mb-3 [&_p]:leading-relaxed [&_h1]:text-2xl [&_h1]:font-bold [&_h1]:mb-4 [&_h2]:text-xl [&_h2]:font-bold [&_h2]:mb-3 [&_h3]:text-lg [&_h3]:font-bold [&_h3]:mb-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:mb-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:mb-3"
+                      dangerouslySetInnerHTML={{ __html: docxHtml || '' }}
+                    />
+                  )}
+                </div>
               </div>
             )}
 
@@ -290,7 +367,7 @@ export default function FilePreviewModal({ item, onClose }) {
                     >
                       {copied ? '✓ Đã sao chép' : 'Sao chép mã'}
                     </button>
-                    <span>UTF-8 • {formatSize(item.sizeBytes)}</span>
+                    <span>UTF-8 • {formatBytes(item.sizeBytes)}</span>
                   </div>
                 </div>
                 <div className="flex-1 overflow-auto text-xs text-slate-200 selection:bg-blue-500/40">
@@ -322,11 +399,15 @@ export default function FilePreviewModal({ item, onClose }) {
               </div>
             )}
 
-            {!isImage && !isVideo && !isAudio && !isPdf && !isCodeOrText && (
+            {!isImage && !isVideo && !isAudio && !isPdf && !isCodeOrText && !isDocx && (
               <div className="p-8 bg-slate-900 border border-white/10 rounded-3xl shadow-2xl flex flex-col items-center gap-4 text-center max-w-sm">
                 <FileText className="w-16 h-16 text-blue-400" />
                 <h4 className="font-bold text-white text-sm">{item.name}</h4>
-                <p className="text-xs text-slate-400">Định dạng tệp không hỗ trợ xem trước trực tiếp.</p>
+                <p className="text-xs text-slate-400">
+                  {Number(item.sizeBytes) > 8 * 1024 * 1024
+                    ? 'Dung lượng tệp lớn (>8MB), vui lòng tải về để xem.'
+                    : 'Định dạng tệp không hỗ trợ xem trước trực tiếp.'}
+                </p>
                 <button
                   onClick={handleDownload}
                   className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-xs font-semibold rounded-xl text-white shadow-lg transition-all"

@@ -1,15 +1,33 @@
 import { useEffect, useRef, useState } from 'react';
-import { Sparkles, Flower2 } from 'lucide-react';
+import { Sparkles, Flower2, Sunset } from 'lucide-react';
 
-export default function AnimatedBackground({ mode = 'tech' }) {
+export default function AnimatedBackground({ mode = 'sunset' }) {
     const canvasRef = useRef(null);
-    const [themeMode, setThemeMode] = useState(mode); // 'tech' | 'petals'
+    const glowRef = useRef(null);
+    const [themeMode, setThemeMode] = useState(mode); // 'sunset' | 'tech' | 'petals'
+
+    // Mouse tracking with Lerp (Linear Interpolation) for ultra-smooth gentle movement
+    const targetMouse = useRef({ x: 0.5, y: 0.5 });
+    const currentMouse = useRef({ x: 0.5, y: 0.5 });
+
+    useEffect(() => {
+        const handleMouseMove = (e) => {
+            targetMouse.current = {
+                x: e.clientX / window.innerWidth,
+                y: e.clientY / window.innerHeight,
+            };
+        };
+
+        window.addEventListener('mousemove', handleMouseMove);
+        return () => window.removeEventListener('mousemove', handleMouseMove);
+    }, []);
 
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         let animationFrameId;
+        let time = 0;
 
         let width = (canvas.width = window.innerWidth);
         let height = (canvas.height = window.innerHeight);
@@ -21,8 +39,8 @@ export default function AnimatedBackground({ mode = 'tech' }) {
         };
         window.addEventListener('resize', handleResize);
 
-        // Tech particles initialization
-        const particlesCount = themeMode === 'tech' ? 55 : 40;
+        // Particle count according to mode
+        const particlesCount = themeMode === 'petals' ? 35 : 45;
         const items = [];
 
         if (themeMode === 'tech') {
@@ -30,33 +48,67 @@ export default function AnimatedBackground({ mode = 'tech' }) {
                 items.push({
                     x: Math.random() * width,
                     y: Math.random() * height,
-                    vx: (Math.random() - 0.5) * 0.6,
-                    vy: (Math.random() - 0.5) * 0.6,
+                    vx: (Math.random() - 0.5) * 0.5,
+                    vy: (Math.random() - 0.5) * 0.5,
                     radius: Math.random() * 2 + 1,
-                    alpha: Math.random() * 0.4 + 0.2,
+                    alpha: Math.random() * 0.3 + 0.15,
                 });
             }
-        } else {
-            // Petals initialization (cánh hoa rơi)
+        } else if (themeMode === 'petals') {
             for (let i = 0; i < particlesCount; i++) {
                 items.push({
                     x: Math.random() * width,
                     y: Math.random() * height,
-                    size: Math.random() * 7 + 5,
-                    speedY: Math.random() * 1.0 + 0.4,
-                    speedX: Math.random() * 0.5 - 0.25,
+                    size: Math.random() * 6 + 4,
+                    speedY: Math.random() * 0.8 + 0.3,
+                    speedX: Math.random() * 0.4 - 0.2,
                     rotation: Math.random() * 360,
-                    rotationSpeed: (Math.random() - 0.5) * 1.8,
-                    opacity: Math.random() * 0.5 + 0.3,
+                    rotationSpeed: (Math.random() - 0.5) * 1.5,
+                    opacity: Math.random() * 0.4 + 0.2,
+                });
+            }
+        } else {
+            // Sunset mode floating subtle ambient dust
+            for (let i = 0; i < particlesCount; i++) {
+                items.push({
+                    x: Math.random() * width,
+                    y: Math.random() * height,
+                    vx: (Math.random() - 0.5) * 0.3,
+                    vy: (Math.random() - 0.5) * 0.3 - 0.15,
+                    size: Math.random() * 2.5 + 1,
+                    alpha: Math.random() * 0.35 + 0.1,
+                    color: i % 2 === 0 ? 'rgba(251, 146, 60, ' : 'rgba(244, 63, 94, ',
                 });
             }
         }
 
         const render = () => {
+            time += 0.008;
             ctx.clearRect(0, 0, width, height);
 
+            // Interpolate current mouse towards target mouse (Lerp factor = 0.035 for gentle fluid motion)
+            currentMouse.current.x += (targetMouse.current.x - currentMouse.current.x) * 0.035;
+            currentMouse.current.y += (targetMouse.current.y - currentMouse.current.y) * 0.035;
+
+            // Calculate gentle sine wave offset so glow continuously moves even when mouse is still
+            const waveX = Math.sin(time * 0.7) * 0.03;
+            const waveY = Math.cos(time * 0.5) * 0.03;
+
+            const finalX = Math.max(0, Math.min(1, currentMouse.current.x + waveX));
+            const finalY = Math.max(0, Math.min(1, currentMouse.current.y + waveY));
+
+            const mouseXPercent = (finalX * 100).toFixed(2);
+            const mouseYPercent = (finalY * 100).toFixed(2);
+
+            // Update smooth diluted sunset radial backdrop DOM directly without React state rerenders
+            if (glowRef.current) {
+                glowRef.current.style.background = `
+                    radial-gradient(900px circle at ${mouseXPercent}% ${mouseYPercent}%, rgba(251, 146, 60, 0.14), rgba(244, 63, 94, 0.09) 40%, rgba(192, 132, 252, 0.05) 70%, transparent 90%),
+                    radial-gradient(1100px circle at ${100 - mouseXPercent}% ${100 - mouseYPercent}%, rgba(245, 158, 11, 0.08), rgba(99, 102, 241, 0.05) 65%, transparent 95%)
+                `;
+            }
+
             if (themeMode === 'tech') {
-                // Render floating tech network nodes & connecting lines
                 for (let i = 0; i < items.length; i++) {
                     const p = items[i];
                     p.x += p.vx;
@@ -70,24 +122,22 @@ export default function AnimatedBackground({ mode = 'tech' }) {
                     ctx.fillStyle = `rgba(59, 130, 246, ${p.alpha})`;
                     ctx.fill();
 
-                    // Connect nearby particles
                     for (let j = i + 1; j < items.length; j++) {
                         const p2 = items[j];
                         const dx = p.x - p2.x;
                         const dy = p.y - p2.y;
                         const dist = Math.sqrt(dx * dx + dy * dy);
-                        if (dist < 120) {
+                        if (dist < 110) {
                             ctx.beginPath();
                             ctx.moveTo(p.x, p.y);
                             ctx.lineTo(p2.x, p2.y);
-                            ctx.strokeStyle = `rgba(99, 102, 241, ${0.2 * (1 - dist / 120)})`;
-                            ctx.lineWidth = 0.7;
+                            ctx.strokeStyle = `rgba(99, 102, 241, ${0.15 * (1 - dist / 110)})`;
+                            ctx.lineWidth = 0.6;
                             ctx.stroke();
                         }
                     }
                 }
-            } else {
-                // Render Sakura Petals falling (cánh hoa rơi)
+            } else if (themeMode === 'petals') {
                 for (let i = 0; i < items.length; i++) {
                     const p = items[i];
                     p.y += p.speedY;
@@ -103,7 +153,6 @@ export default function AnimatedBackground({ mode = 'tech' }) {
                     ctx.translate(p.x, p.y);
                     ctx.rotate((p.rotation * Math.PI) / 180);
 
-                    // Draw soft petal shape
                     ctx.beginPath();
                     ctx.moveTo(0, 0);
                     ctx.bezierCurveTo(-p.size / 2, -p.size / 2, -p.size, p.size / 3, 0, p.size);
@@ -112,6 +161,20 @@ export default function AnimatedBackground({ mode = 'tech' }) {
                     ctx.fill();
 
                     ctx.restore();
+                }
+            } else {
+                for (let i = 0; i < items.length; i++) {
+                    const p = items[i];
+                    p.x += p.vx;
+                    p.y += p.vy;
+
+                    if (p.x < 0 || p.x > width) p.vx *= -1;
+                    if (p.y < 0 || p.y > height) p.y = height;
+
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    ctx.fillStyle = `${p.color}${p.alpha})`;
+                    ctx.fill();
                 }
             }
 
@@ -132,44 +195,20 @@ export default function AnimatedBackground({ mode = 'tech' }) {
             <div className="absolute inset-0 bg-slate-950" />
 
             {/* Subtle Grid Overlay */}
-            <div className="absolute inset-0 bg-grid-pattern opacity-40" />
+            <div className="absolute inset-0 bg-grid-pattern opacity-25" />
 
-            {/* Section-Aware Radial Glowing Lights */}
-            {/* Hero Ambient Blue Glow */}
-            <div className="absolute top-[-10%] left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-gradient-to-b from-blue-600/20 via-indigo-600/10 to-transparent rounded-full blur-[120px] pointer-events-none animate-pulse-glow" />
+            {/* ULTRA SMOOTH & DILUTED SUNSET GRADIENT OVERLAY (Lerp + Wave Easing) */}
+            <div
+                ref={glowRef}
+                className="absolute inset-0 transition-opacity duration-1000 pointer-events-none"
+            />
 
-            {/* Features Purple Accent Ambient Light */}
-            <div className="absolute top-[35%] right-[-10%] w-[600px] h-[600px] bg-purple-600/15 rounded-full blur-[140px] pointer-events-none" />
-
-            {/* About Indigo Ambient Light */}
-            <div className="absolute top-[65%] left-[-10%] w-[650px] h-[650px] bg-indigo-600/15 rounded-full blur-[150px] pointer-events-none" />
-
-            {/* Footer Bottom Sky Glow */}
-            <div className="absolute bottom-[-10%] left-1/2 -translate-x-1/2 w-[900px] h-[350px] bg-sky-500/10 rounded-full blur-[100px] pointer-events-none" />
+            {/* Hero Soft Diluted Sunset Ambient Glow */}
+            <div className="absolute top-[-10%] left-1/2 -translate-x-1/2 w-[1000px] h-[600px] bg-gradient-to-b from-orange-500/10 via-rose-500/05 to-transparent rounded-full blur-[160px] pointer-events-none animate-pulse-glow" />
 
             {/* Interactive Canvas */}
-            <canvas ref={canvasRef} className="absolute inset-0 w-full h-full opacity-70" />
-
-            {/* Floating theme toggle button (Bottom left pointer interactive) */}
-            <div className="pointer-events-auto fixed bottom-6 left-6 z-50">
-                <button
-                    onClick={() => setThemeMode(prev => prev === 'tech' ? 'petals' : 'tech')}
-                    className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-slate-900/80 hover:bg-slate-800 backdrop-blur-xl text-white text-xs font-medium border border-white/10 shadow-xl hover:border-blue-500/30 transition-all cursor-pointer group"
-                    title="Đổi hiệu ứng nền (Công nghệ / Cánh hoa rơi)"
-                >
-                    {themeMode === 'tech' ? (
-                        <>
-                            <Sparkles className="w-3.5 h-3.5 text-blue-400 group-hover:rotate-12 transition-transform" />
-                            <span className="text-slate-300 group-hover:text-white">Mạng công nghệ</span>
-                        </>
-                    ) : (
-                        <>
-                            <Flower2 className="w-3.5 h-3.5 text-pink-400 animate-spin" />
-                            <span className="text-slate-300 group-hover:text-white">Cánh hoa rơi</span>
-                        </>
-                    )}
-                </button>
-            </div>
+            <canvas ref={canvasRef} className="absolute inset-0 w-full h-full opacity-60" />
         </div>
     );
 }
+

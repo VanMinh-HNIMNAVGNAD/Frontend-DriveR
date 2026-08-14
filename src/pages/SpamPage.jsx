@@ -6,18 +6,18 @@ import { useFiles } from '../context/FileContext';
 import { ShieldAlert, AlertTriangle, List, LayoutGrid } from 'lucide-react';
 
 export default function SpamPage() {
-    const { 
+    const {
         viewMode,
         setViewMode,
         setActiveTab,
-        filterType, 
-        setFilterType, 
-        filterDate, 
-        setFilterDate, 
-        filterOwner, 
-        setFilterOwner, 
-        uniqueOwners, 
-        resetFilters 
+        filterType,
+        setFilterType,
+        filterDate,
+        setFilterDate,
+        filterOwner,
+        setFilterOwner,
+        uniqueOwners,
+        resetFilters
     } = useFiles();
 
     return (
@@ -35,22 +35,20 @@ export default function SpamPage() {
                         <button
                             onClick={() => setViewMode('list')}
                             title="Xem dạng danh sách"
-                            className={`p-1.5 rounded-full transition-colors ${
-                                viewMode === 'list'
+                            className={`p-1.5 rounded-full transition-colors ${viewMode === 'list'
                                     ? 'bg-white shadow-xs text-blue-600 font-medium'
                                     : 'text-gray-500 hover:text-gray-800'
-                            }`}
+                                }`}
                         >
                             <List className="w-4 h-4" />
                         </button>
                         <button
                             onClick={() => setViewMode('grid')}
                             title="Xem dạng lưới"
-                            className={`p-1.5 rounded-full transition-colors ${
-                                viewMode === 'grid'
+                            className={`p-1.5 rounded-full transition-colors ${viewMode === 'grid'
                                     ? 'bg-white shadow-xs text-blue-600 font-medium'
                                     : 'text-gray-500 hover:text-gray-800'
-                            }`}
+                                }`}
                         >
                             <LayoutGrid className="w-4 h-4" />
                         </button>
@@ -81,11 +79,10 @@ export default function SpamPage() {
                 onReset={resetFilters}
             />
 
-            {/* View Container (List or Grid) */}
+            {/* View Container */}
             <div className="flex-1 overflow-y-auto mt-2">
                 {viewMode === 'grid' ? <FileGridView /> : <FileListView />}
             </div>
         </div>
     );
 }
-

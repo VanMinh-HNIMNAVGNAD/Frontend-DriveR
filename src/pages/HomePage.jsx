@@ -1,16 +1,16 @@
 import { useFiles } from '../context/FileContext';
 import FileSkeleton from '../components/common/FileSkeleton';
-import { 
-    HardDrive, 
-    Clock, 
-    Users, 
-    ArrowRight, 
-    Folder, 
-    FileText, 
-    FileSpreadsheet, 
-    Image, 
-    File, 
-    Star, 
+import {
+    HardDrive,
+    Clock,
+    Users,
+    ArrowRight,
+    Folder,
+    FileText,
+    FileSpreadsheet,
+    Image,
+    File,
+    Star,
     MoreVertical,
     List,
     LayoutGrid,
@@ -79,8 +79,8 @@ export default function HomePage() {
                         </div>
 
                         {/* Action */}
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); }} 
+                        <button
+                            onClick={(e) => { e.stopPropagation(); }}
                             className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-200/50"
                         >
                             <MoreVertical className="w-4 h-4" />
@@ -107,7 +107,7 @@ export default function HomePage() {
                     >
                         <div className="flex items-center justify-between">
                             {getFileIcon(item)}
-                            <button 
+                            <button
                                 onClick={(e) => { e.stopPropagation(); }}
                                 className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity"
                             >
@@ -146,7 +146,7 @@ export default function HomePage() {
 
     return (
         <div className="flex flex-col h-full space-y-7 overflow-y-auto pr-1">
-            
+
             {/* Header Toolbar với Nút chuyển đổi View Switcher */}
             <div className="flex items-center justify-between pb-2 border-b border-gray-100">
                 <div className="flex items-center gap-2">
@@ -159,28 +159,26 @@ export default function HomePage() {
                     <button
                         onClick={() => setViewMode('list')}
                         title="Xem dạng danh sách"
-                        className={`p-1.5 rounded-full transition-colors ${
-                            viewMode === 'list'
+                        className={`p-1.5 rounded-full transition-colors ${viewMode === 'list'
                                 ? 'bg-white shadow-xs text-blue-600 font-medium'
                                 : 'text-gray-500 hover:text-gray-800'
-                        }`}
+                            }`}
                     >
                         <List className="w-4 h-4" />
                     </button>
                     <button
                         onClick={() => setViewMode('grid')}
                         title="Xem dạng lưới"
-                        className={`p-1.5 rounded-full transition-colors ${
-                            viewMode === 'grid'
+                        className={`p-1.5 rounded-full transition-colors ${viewMode === 'grid'
                                 ? 'bg-white shadow-xs text-blue-600 font-medium'
                                 : 'text-gray-500 hover:text-gray-800'
-                        }`}
+                            }`}
                     >
                         <LayoutGrid className="w-4 h-4" />
                     </button>
                 </div>
             </div>
-            
+
             {/* SECTION 1: MỤC CỦA TÔI (MY DRIVE - TOP 5-6) */}
             <section className="space-y-2">
                 <div className="flex items-center justify-between pb-1 border-b border-gray-200">
