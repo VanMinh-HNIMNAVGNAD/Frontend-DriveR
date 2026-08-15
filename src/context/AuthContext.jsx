@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { authApi } from '../services/api';
+import { authApi, userApi } from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -88,6 +88,21 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  const deleteAccount = async (password) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const res = await userApi.deleteMyAccount(password);
+      logout();
+      return res;
+    } catch (err) {
+      setError(err.message || 'Xoá tài khoản thất bại');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const value = {
     user,
     accessToken,
@@ -97,6 +112,7 @@ export function AuthProvider({ children }) {
     login,
     register,
     logout,
+    deleteAccount,
     refreshUser: fetchProfile,
   };
 

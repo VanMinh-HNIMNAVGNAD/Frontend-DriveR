@@ -12,6 +12,7 @@ export default function AccountModal({ isOpen, onClose }) {
 
     useEffect(() => {
         const handleClickOutside = (e) => {
+            if (isProfileOpen) return;
             if (modalRef.current && !modalRef.current.contains(e.target)) {
                 onClose && onClose();
             }

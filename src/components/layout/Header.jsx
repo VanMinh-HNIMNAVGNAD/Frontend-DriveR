@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import SearchFilterModal from './SearchFilterModal';
 import SettingsModal from './SettingsModal';
 import AccountModal from './AccountModal';
+import ActivityLogDrawer from '../file-manager/ActivityLogDrawer';
 import { 
     Menu, 
     Search, 
@@ -22,7 +23,8 @@ import {
     Download,
     Copy,
     Scissors,
-    AlertCircle
+    AlertCircle,
+    History
 } from 'lucide-react';
 
 export default function Header({ toggleRightSidebar }) {
@@ -57,6 +59,7 @@ export default function Header({ toggleRightSidebar }) {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isAccountOpen, setIsAccountOpen] = useState(false);
     const [isAppsMenuOpen, setIsAppsMenuOpen] = useState(false);
+    const [isActivityLogOpen, setIsActivityLogOpen] = useState(false);
 
     const appsMenuRef = useRef(null);
 
@@ -385,6 +388,15 @@ export default function Header({ toggleRightSidebar }) {
                     )}
                 </div>
 
+                {/* Nút Lịch sử hoạt động */}
+                <button
+                    onClick={() => setIsActivityLogOpen(true)}
+                    title="Lịch sử hoạt động"
+                    className="p-2.5 text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 rounded-full transition-colors cursor-pointer"
+                >
+                    <History className="w-5 h-5" />
+                </button>
+
                 {/* Nút Cài Đặt */}
                 <button
                     onClick={() => setIsSettingsOpen(true)}
@@ -436,6 +448,14 @@ export default function Header({ toggleRightSidebar }) {
             <SettingsModal
                 isOpen={isSettingsOpen}
                 onClose={() => setIsSettingsOpen(false)}
+            />
+
+            {/* Drawer Lịch sử hoạt động */}
+            <ActivityLogDrawer
+                isOpen={isActivityLogOpen}
+                onClose={() => setIsActivityLogOpen(false)}
+                fileId={null}
+                fileName={null}
             />
         </header>
     );

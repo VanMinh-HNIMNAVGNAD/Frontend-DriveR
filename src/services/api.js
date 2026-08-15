@@ -66,6 +66,10 @@ export const userApi = {
     },
   }),
   recalculateQuota: () => api.patch('/users/me/recalculate-quota'),
+  getMySessions: () => api.get('/users/me/sessions'),
+  revokeSession: (sessionId) => api.delete(`/users/me/sessions/${sessionId}`),
+  revokeAllOtherSessions: () => api.delete('/users/me/sessions'),
+  deleteMyAccount: (password) => api.delete('/users/me', { data: { password } }),
 };
 
 // Files & Folders Hierarchy APIs
@@ -84,7 +88,10 @@ export const filesApi = {
   getStorageAnalytics: () => api.get('/files/analytics'),
   downloadZip: (fileIds) => api.post('/files/download-zip', { fileIds }, { responseType: 'blob' }),
   getFileVersions: (id) => api.get(`/files/${id}/versions`),
-  getActivityLogs: (id) => api.get(id ? `/files/${id}/activity-logs` : '/files/activity-logs'),
+  getActivityLogs: (fileId) => {
+    const url = fileId ? `/files/${fileId}/activity-logs` : '/files/activity-logs';
+    return api.get(url);
+  },
 };
 
 // Multi-Cloud Storage APIs
