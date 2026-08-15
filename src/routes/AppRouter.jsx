@@ -4,6 +4,7 @@ import LoginPage from '../pages/LoginPage';
 import RegisterPage from '../pages/RegisterPage';
 import MainLayout from '../components/layout/MainLayout';
 import PageNotFound from '../pages/PageNotFound';
+import SharePage from '../pages/SharePage';
 
 // Pages
 import HomePage from '../pages/HomePage';
@@ -29,7 +30,10 @@ export default function AppRouter() {
             <Route path="/" element={<LandingPage onLaunchDrive={() => navigate('/app')} />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
-            
+
+            {/* Route công khai — xem file qua link chia sẻ, không cần đăng nhập */}
+            <Route path="/share/:token" element={<SharePage />} />
+
             <Route path="/app" element={<MainLayout />}>
                 <Route index element={<IndexRedirect />} />
                 <Route path="home" element={<HomePage />} />

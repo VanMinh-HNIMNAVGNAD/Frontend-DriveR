@@ -3,6 +3,7 @@ import { storageApi } from '../../services/api';
 import { formatBytes } from '../../utils/formatFileSize';
 import * as XLSX from 'xlsx';
 import mammoth from 'mammoth';
+import * as pdfjsLib from 'pdfjs-dist';
 import { 
     FileText, 
     FileSpreadsheet, 
@@ -19,6 +20,11 @@ import {
     CheckSquare,
     Square,
 } from 'lucide-react';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+    'pdfjs-dist/build/pdf.worker.min.mjs',
+    import.meta.url
+).toString();
 
 const fileTypeStyles = {
     pdf: {
@@ -103,26 +109,18 @@ const fileTypeStyles = {
 function getFileTypeCategory(name = '') {
     const n = name.toLowerCase();
     if (n.endsWith('.pdf')) return 'pdf';
-    if (n.endsWith('.xlsx') || n.endsWith('.csv')) return 'sheet';
-    if (n.endsWith('.png') || n.endsWith('.jpg') || n.endsWith('.jpeg') || n.endsWith('.svg') || n.endsWith('.webp') || n.endsWith('.gif')) return 'image';
-    if (n.endsWith('.mp4') || n.endsWith('.mkv') || n.endsWith('.mov')) return 'video';
-    if (n.endsWith('.mp3') || n.endsWith('.wav') || n.endsWith('.flac')) return 'audio';
-    if (n.endsWith('.sql') || n.endsWith('.db') || n.endsWith('.sqlite')) return 'database';
+    if (n.endsWith('.xlsx') || n.endsWith('.csv') || n.endsWith('.xls')) return 'sheet';
+    if (/\.(png|jpg|jpeg|svg|webp|gif|bmp|ico)$/i.test(n)) return 'image';
+    if (/\.(mp4|mkv|mov|webm)$/i.test(n)) return 'video';
+    if (/\.(mp3|wav|flac|ogg|m4a)$/i.test(n)) return 'audio';
+    if (/\.(sql|db|sqlite)$/i.test(n)) return 'database';
     if (n.endsWith('.fig')) return 'figma';
-    if (n.endsWith('.docx') || n.endsWith('.doc') || n.endsWith('.txt') || n.endsWith('.pptx') || n.endsWith('.md')) return 'doc';
-    if (n.endsWith('.zip') || n.endsWith('.rar') || n.endsWith('.7z')) return 'archive';
-    // Mở rộng: code + json + yaml + xml + shell + nhiều ngôn ngữ khác
-    if (
-        n.endsWith('.js') || n.endsWith('.jsx') || n.endsWith('.ts') || n.endsWith('.tsx') ||
-        n.endsWith('.py') || n.endsWith('.java') || n.endsWith('.c') || n.endsWith('.cpp') ||
-        n.endsWith('.cs') || n.endsWith('.go') || n.endsWith('.rb') || n.endsWith('.php') ||
-        n.endsWith('.sh') || n.endsWith('.bash') || n.endsWith('.zsh') ||
-        n.endsWith('.json') || n.endsWith('.xml') || n.endsWith('.yaml') || n.endsWith('.yml') ||
-        n.endsWith('.toml') || n.endsWith('.ini') || n.endsWith('.env') ||
-        n.endsWith('.css') || n.endsWith('.scss') || n.endsWith('.html') || n.endsWith('.htm') ||
-        n.endsWith('.vue') || n.endsWith('.svelte') || n.endsWith('.kt') || n.endsWith('.swift') ||
-        n.endsWith('.rs') || n.endsWith('.dart') || n.endsWith('.lua') || n.endsWith('.exe')
-    ) return 'code';
+    if (/\.(docx|doc|txt|pptx|md|markdown|log|env|conf|ini)$/i.test(n)) return 'doc';
+    if (/\.(zip|rar|7z|tar|gz)$/i.test(n)) return 'archive';
+    // Danh sách mở rộng toàn bộ các file code
+    if (/\.(js|jsx|ts|tsx|py|java|c|cpp|h|hpp|cs|go|rb|php|sh|bash|zsh|json|xml|yaml|yml|toml|css|scss|sass|html|htm|vue|svelte|kt|swift|rs|dart|lua|prisma|graphql)$/i.test(n)) {
+        return 'code';
+    }
     return 'default';
 }
 
@@ -133,9 +131,9 @@ export default function FileCard({ file, onDoubleClick, onContextMenu, onStarTog
     const cat = getFileTypeCategory(file?.name);
     const style = fileTypeStyles[cat] || fileTypeStyles.default;
 
-    // thumbType: 'image' | 'video' | 'pdf-blob' | 'sheet' | 'text' | null
+    // thumbType: 'image' | 'video' | 'sheet' | 'text' | null
     const [thumbType, setThumbType] = useState(null);
-    const [thumbUrl, setThumbUrl] = useState(null);     // image, video, pdf-blob
+    const [thumbUrl, setThumbUrl] = useState(null);     // image, video
     const [textContent, setTextContent] = useState(null); // text, code, docx
     const [sheetData, setSheetData] = useState(null);   // xlsx rows [row][col]
 
@@ -147,7 +145,6 @@ export default function FileCard({ file, onDoubleClick, onContextMenu, onStarTog
         if (!sizeOk) return;
 
         let isMounted = true;
-        let blobUrlToRevoke = null;
 
         const n = file.name.toLowerCase();
 
@@ -162,20 +159,33 @@ export default function FileCard({ file, onDoubleClick, onContextMenu, onStarTog
                 })
                 .catch(() => {});
 
-        // ── PDF: fetch binary → Blob URL (tránh download popup của R2) ──
+        // ── PDF: render Canvas qua pdfjsLib buffer (không dùng iframe) ──
         } else if (cat === 'pdf') {
             (async () => {
                 try {
                     const res = await storageApi.getPreviewUrl(file.id);
                     if (!res?.previewUrl || !isMounted) return;
-                    const response = await fetch(res.previewUrl);
-                    if (!response.ok || !isMounted) return;
-                    const buffer = await response.arrayBuffer();
+
+                    const pdfData = await fetch(res.previewUrl).then(r => r.arrayBuffer());
                     if (!isMounted) return;
-                    const blob = new Blob([buffer], { type: 'application/pdf' });
-                    blobUrlToRevoke = URL.createObjectURL(blob);
-                    setThumbUrl(blobUrlToRevoke);
-                    setThumbType('pdf-blob');
+
+                    const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+                    const pdf = await loadingTask.promise;
+                    if (!isMounted) return;
+
+                    const page = await pdf.getPage(1);
+                    const viewport = page.getViewport({ scale: 0.5 });
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+
+                    await page.render({ canvasContext: context, viewport }).promise;
+
+                    if (isMounted) {
+                        setThumbUrl(canvas.toDataURL('image/jpeg', 0.8));
+                        setThumbType('image');
+                    }
                 } catch { /* fallback icon */ }
             })();
 
@@ -218,7 +228,7 @@ export default function FileCard({ file, onDoubleClick, onContextMenu, onStarTog
             })();
 
         // ── TXT / MD: gọi getFileTextContent (backend đã trả text sẵn) ──
-        } else if (cat === 'doc' && (n.endsWith('.txt') || n.endsWith('.md'))) {
+        } else if (cat === 'doc' && (n.endsWith('.txt') || n.endsWith('.md') || n.endsWith('.markdown') || n.endsWith('.log') || n.endsWith('.env') || n.endsWith('.conf') || n.endsWith('.ini'))) {
             storageApi.getFileTextContent(file.id)
                 .then(res => {
                     if (isMounted && res?.content) {
@@ -243,7 +253,6 @@ export default function FileCard({ file, onDoubleClick, onContextMenu, onStarTog
 
         return () => {
             isMounted = false;
-            if (blobUrlToRevoke) URL.revokeObjectURL(blobUrlToRevoke);
         };
     }, [cat, file?.id, file?.size]);
 
@@ -325,14 +334,6 @@ export default function FileCard({ file, onDoubleClick, onContextMenu, onStarTog
                         preload="metadata"
                         className="w-full h-full object-cover rounded-lg pointer-events-none"
                         onLoadedMetadata={(e) => { e.target.currentTime = 1; }}
-                    />
-
-                ) : thumbType === 'pdf-blob' && thumbUrl ? (
-                    /* ── PDF via Blob URL → inline, không bao giờ download popup ── */
-                    <iframe
-                        src={`${thumbUrl}#toolbar=0&navpanes=0&scrollbar=0&page=1&view=FitH`}
-                        title={file.name}
-                        className="w-full h-full rounded-lg pointer-events-none border-0"
                     />
 
                 ) : thumbType === 'sheet' && sheetData ? (

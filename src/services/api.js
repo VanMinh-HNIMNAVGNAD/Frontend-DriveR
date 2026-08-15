@@ -34,12 +34,15 @@ api.interceptors.response.use(
   (error) => {
     if (error.response && error.response.status === 401) {
       localStorage.removeItem('accessToken');
-      if (window.location.pathname !== '/login' && window.location.pathname !== '/register' && window.location.pathname !== '/') {
+      const path = window.location.pathname;
+      // Khách vãng lai trên trang chia sẻ KHÔNG bao giờ bị redirect về /login
+      const isPublicSharePage = path.startsWith('/share');
+      if (!isPublicSharePage && path !== '/login' && path !== '/register' && path !== '/') {
         window.location.href = '/login';
       }
     }
     const message = error.response?.data?.message || error.message || 'Đã có lỗi xảy ra';
-    console.error('[API Error]', error); // In lỗi ra F12
+    console.error('[API Error]', error);
     return Promise.reject(new Error(Array.isArray(message) ? message.join(', ') : message));
   },
 );
@@ -57,6 +60,11 @@ export const authApi = {
 export const userApi = {
   getMe: () => api.get('/users/me'),
   updateMe: (data) => api.patch('/users/me', data),
+  updateAvatar: (formData) => api.post('/users/me/avatar', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  }),
   recalculateQuota: () => api.patch('/users/me/recalculate-quota'),
 };
 
@@ -160,12 +168,24 @@ export const chunkedApi = {
     api.post('/files/upload-chunk/complete', data),
 };
 
-// Sharing APIs
+// Sharing APIs — Public share link & access management
 export const sharingApi = {
-  createShareLink: (id, data) => api.post(`/files/${id}/share`, data),
+  /** Lấy thông tin tệp qua token chia sẻ (không cần đăng nhập) */
   getSharedItem: (token) => api.get(`/shares/${token}`),
+  /** Sinh presigned preview URL (inline) qua token chia sẻ */
+  getSharedPreviewUrl: (token) => api.get(`/shares/${token}/preview-url`),
+  /** Sinh presigned download URL qua token chia sẻ */
+  getSharedDownloadUrl: (token) => api.get(`/shares/${token}/download-url`),
+  /** Lấy danh sách file/folder con trong thư mục được chia sẻ (không cần đăng nhập) */
+  getSharedChildren: (token, folderId) =>
+    api.get(`/shares/${token}/children`, { params: folderId ? { folderId } : {} }),
+  /** Tạo link chia sẻ công khai cho một tệp (yêu cầu đăng nhập) */
+  createShareLink: (id, data) => api.post(`/files/${id}/share`, data),
+  /** Lấy danh sách người được chia sẻ trực tiếp (yêu cầu đăng nhập) */
   getShareAccess: (id) => api.get(`/files/${id}/share-access`),
+  /** Thêm quyền truy cập cho người dùng cụ thể (yêu cầu đăng nhập) */
   addShareAccess: (id, data) => api.post(`/files/${id}/share-access`, data),
+  /** Thu hồi quyền truy cập của một người dùng (yêu cầu đăng nhập) */
   removeShareAccess: (id, userId) => api.delete(`/files/${id}/share-access/${userId}`),
 };
 

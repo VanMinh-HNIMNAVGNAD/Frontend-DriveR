@@ -4,7 +4,6 @@ import {
     Pencil, 
     Sparkles, 
     UserPlus, 
-    FolderPlus, 
     Info, 
     Trash2, 
     ThumbsDown, 
@@ -15,10 +14,10 @@ import {
     Activity, 
     FileText, 
     RotateCcw,
-    ShieldAlert,
     Eye,
     Scissors,
-    Loader2
+    Loader2,
+    ShieldOff
 } from 'lucide-react';
 
 export default function ContextMenu({ 
@@ -45,7 +44,7 @@ export default function ContextMenu({
     onShowInfo, 
     onDismissSuggestion 
 }) {
-    const [activeSubmenu, setActiveSubmenu] = useState(null); // 'share' | 'organize' | 'info' | null
+    const [activeSubmenu, setActiveSubmenu] = useState(null);
     const menuRef = useRef(null);
 
     // Reposition menu to stay inside window bounds
@@ -83,6 +82,20 @@ export default function ContextMenu({
 
     const isFolder = item.type === 'folder';
 
+    // ── RBAC: Phân quyền cho tab "Được chia sẻ với tôi" ──────────────
+    const isSharedWithMeTab = activeTab === 'shared-with-me';
+    const sharedRole = item.sharedRole; // 'VIEWER' | 'EDITOR' | undefined
+    const isViewerOnly = isSharedWithMeTab && sharedRole === 'VIEWER';
+    const isEditorInShared = isSharedWithMeTab && sharedRole === 'EDITOR';
+
+    // Trong shared-with-me:
+    // VIEWER: chỉ Preview + Download + Star + Hỏi Gemini + Thông tin
+    // EDITOR: thêm Đổi tên. Không có Cắt / Thùng rác
+    const canRename = !isSharedWithMeTab || isEditorInShared;
+    const canCut = !isSharedWithMeTab;
+    const canTrash = !isSharedWithMeTab;
+    const canShare = !isSharedWithMeTab; // Chỉ owner mới chia sẻ được
+
     return (
         <div
             ref={menuRef}
@@ -90,9 +103,18 @@ export default function ContextMenu({
             style={{ top: pos.top, left: pos.left }}
             onClick={(e) => e.stopPropagation()}
         >
-            {/* Context menu title header if present */}
+            {/* Header */}
             <div className="px-4 py-1.5 mb-1 border-b border-gray-700/60 text-xs font-semibold text-gray-400 truncate flex items-center gap-2">
                 <span className="truncate">{item.name}</span>
+                {isSharedWithMeTab && sharedRole && (
+                    <span className={`ml-auto shrink-0 px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
+                        sharedRole === 'EDITOR'
+                            ? 'bg-emerald-500/20 text-emerald-400'
+                            : 'bg-sky-500/20 text-sky-400'
+                    }`}>
+                        {sharedRole === 'EDITOR' ? 'Chỉnh sửa' : 'Xem'}
+                    </span>
+                )}
             </div>
 
             {isTrashTab ? (
@@ -136,17 +158,28 @@ export default function ContextMenu({
                         <span>Tải xuống</span>
                     </button>
 
-                    {/* 2. Đổi tên */}
-                    <button
-                        onClick={() => { onRename?.(item); onClose(); }}
-                        className="w-full px-4 py-2 hover:bg-[#37393b] cursor-pointer flex items-center justify-between text-gray-200 transition-colors"
-                    >
-                        <div className="flex items-center gap-3">
-                            <Pencil className="w-4 h-4 text-gray-300 shrink-0" />
-                            <span>Đổi tên</span>
+                    {/* 2. Đổi tên — ẩn nếu VIEWER trong shared-with-me */}
+                    {canRename ? (
+                        <button
+                            onClick={() => { onRename?.(item); onClose(); }}
+                            className="w-full px-4 py-2 hover:bg-[#37393b] cursor-pointer flex items-center justify-between text-gray-200 transition-colors"
+                        >
+                            <div className="flex items-center gap-3">
+                                <Pencil className="w-4 h-4 text-gray-300 shrink-0" />
+                                <span>Đổi tên</span>
+                            </div>
+                            <span className="text-[11px] text-gray-400 font-mono">Ctrl+Alt+E</span>
+                        </button>
+                    ) : (
+                        // Hiển thị disabled hint khi VIEWER
+                        <div className="w-full px-4 py-2 flex items-center justify-between text-gray-600 cursor-not-allowed">
+                            <div className="flex items-center gap-3">
+                                <ShieldOff className="w-4 h-4 shrink-0" />
+                                <span className="line-through text-xs">Đổi tên</span>
+                            </div>
+                            <span className="text-[10px] text-gray-600">Chỉ xem</span>
                         </div>
-                        <span className="text-[11px] text-gray-400 font-mono">Ctrl+Alt+E</span>
-                    </button>
+                    )}
 
                     {/* 2.5. Đánh dấu sao */}
                     <button
@@ -162,17 +195,19 @@ export default function ContextMenu({
                     {/* Separator: Clipboard Actions */}
                     <div className="h-px bg-gray-700/60 my-1"></div>
 
-                    {/* Cắt */}
-                    <button
-                        onClick={() => { onCut?.(item); onClose(); }}
-                        className="w-full px-4 py-2 hover:bg-[#37393b] cursor-pointer flex items-center justify-between text-gray-200 transition-colors"
-                    >
-                        <div className="flex items-center gap-3">
-                            <Scissors className="w-4 h-4 text-gray-300 shrink-0" />
-                            <span>Cắt</span>
-                        </div>
-                        <span className="text-[11px] text-gray-400 font-mono">Ctrl+X</span>
-                    </button>
+                    {/* Cắt — ẩn trong shared-with-me */}
+                    {canCut && (
+                        <button
+                            onClick={() => { onCut?.(item); onClose(); }}
+                            className="w-full px-4 py-2 hover:bg-[#37393b] cursor-pointer flex items-center justify-between text-gray-200 transition-colors"
+                        >
+                            <div className="flex items-center gap-3">
+                                <Scissors className="w-4 h-4 text-gray-300 shrink-0" />
+                                <span>Cắt</span>
+                            </div>
+                            <span className="text-[11px] text-gray-400 font-mono">Ctrl+X</span>
+                        </button>
+                    )}
 
                     {/* Sao chép */}
                     <button
@@ -223,50 +258,51 @@ export default function ContextMenu({
                     {/* Separator 2 */}
                     <div className="h-px bg-gray-700/60 my-1"></div>
 
-                    {/* 4. Chia sẻ (With Submenu) */}
-                    <div 
-                        className="relative"
-                        onMouseEnter={() => setActiveSubmenu('share')}
-                        onMouseLeave={() => setActiveSubmenu(null)}
-                    >
-                        <button
-                            onClick={() => { onShare?.(item); onClose(); }}
-                            className="w-full px-4 py-2 hover:bg-[#37393b] cursor-pointer flex items-center justify-between text-gray-200 transition-colors"
+                    {/* 4. Chia sẻ — chỉ hiển thị khi là owner */}
+                    {canShare && (
+                        <div
+                            className="relative"
+                            onMouseEnter={() => setActiveSubmenu('share')}
+                            onMouseLeave={() => setActiveSubmenu(null)}
                         >
-                            <div className="flex items-center gap-3">
-                                <UserPlus className="w-4 h-4 text-gray-300 shrink-0" />
-                                <span>Chia sẻ</span>
-                            </div>
-                            <ChevronRight className="w-4 h-4 text-gray-400" />
-                        </button>
+                            <button
+                                onClick={() => { onShare?.(item); onClose(); }}
+                                className="w-full px-4 py-2 hover:bg-[#37393b] cursor-pointer flex items-center justify-between text-gray-200 transition-colors"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <UserPlus className="w-4 h-4 text-gray-300 shrink-0" />
+                                    <span>Chia sẻ</span>
+                                </div>
+                                <ChevronRight className="w-4 h-4 text-gray-400" />
+                            </button>
 
-                        {/* Share Submenu */}
-                        {activeSubmenu === 'share' && (
-                            <div className="absolute left-full top-0 ml-1 w-48 bg-[#282a2c]/90 backdrop-blur-md text-gray-200 rounded-xl shadow-xl py-1.5 border border-gray-700/80 z-50 text-[13px]">
-                                <button
-                                    onClick={() => { onShare?.(item); onClose(); }}
-                                    className="w-full px-4 py-2 hover:bg-[#37393b] flex items-center gap-2 text-left"
-                                >
-                                    <UserPlus className="w-4 h-4 text-blue-400" />
-                                    <span>Chia sẻ...</span>
-                                </button>
-                                <button
-                                    onClick={() => { 
-                                        navigator.clipboard.writeText(`${window.location.origin}/s/${item.id}`);
-                                        alert('Đã sao chép đường liên kết!');
-                                        onClose(); 
-                                    }}
-                                    className="w-full px-4 py-2 hover:bg-[#37393b] flex items-center gap-2 text-left"
-                                >
-                                    <Copy className="w-4 h-4 text-gray-300" />
-                                    <span>Sao chép đường liên kết</span>
-                                </button>
-                            </div>
-                        )}
-                    </div>
+                            {/* Share Submenu */}
+                            {activeSubmenu === 'share' && (
+                                <div className="absolute left-full top-0 ml-1 w-48 bg-[#282a2c]/90 backdrop-blur-md text-gray-200 rounded-xl shadow-xl py-1.5 border border-gray-700/80 z-50 text-[13px]">
+                                    <button
+                                        onClick={() => { onShare?.(item); onClose(); }}
+                                        className="w-full px-4 py-2 hover:bg-[#37393b] flex items-center gap-2 text-left"
+                                    >
+                                        <UserPlus className="w-4 h-4 text-blue-400" />
+                                        <span>Chia sẻ...</span>
+                                    </button>
+                                    <button
+                                        onClick={() => { 
+                                            onShare?.(item); 
+                                            onClose(); 
+                                        }}
+                                        className="w-full px-4 py-2 hover:bg-[#37393b] flex items-center gap-2 text-left"
+                                    >
+                                        <Copy className="w-4 h-4 text-gray-300" />
+                                        <span>Sao chép đường liên kết...</span>
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
-                    {/* 6. Thông tin về thư mục / tệp (With Submenu) */}
-                    <div 
+                    {/* 6. Thông tin về thư mục / tệp */}
+                    <div
                         className="relative"
                         onMouseEnter={() => setActiveSubmenu('info')}
                         onMouseLeave={() => setActiveSubmenu(null)}
@@ -306,17 +342,28 @@ export default function ContextMenu({
                     {/* Separator 3 */}
                     <div className="h-px bg-gray-700/60 my-1"></div>
 
-                    {/* 7. Chuyển vào thùng rác */}
-                    <button
-                        onClick={() => { onMoveToTrash?.(item); onClose(); }}
-                        className="w-full px-4 py-2 hover:bg-[#37393b] cursor-pointer flex items-center justify-between text-gray-200 hover:text-rose-300 transition-colors"
-                    >
-                        <div className="flex items-center gap-3">
-                            <Trash2 className="w-4 h-4 text-gray-300 shrink-0" />
-                            <span>Chuyển vào thùng rác</span>
+                    {/* 7. Chuyển vào thùng rác — ẩn trong shared-with-me */}
+                    {canTrash ? (
+                        <button
+                            onClick={() => { onMoveToTrash?.(item); onClose(); }}
+                            className="w-full px-4 py-2 hover:bg-[#37393b] cursor-pointer flex items-center justify-between text-gray-200 hover:text-rose-300 transition-colors"
+                        >
+                            <div className="flex items-center gap-3">
+                                <Trash2 className="w-4 h-4 text-gray-300 shrink-0" />
+                                <span>Chuyển vào thùng rác</span>
+                            </div>
+                            <span className="text-[11px] text-gray-400 font-mono">Delete</span>
+                        </button>
+                    ) : (
+                        // Hiển thị disabled hint khi trong shared-with-me
+                        <div className="w-full px-4 py-2 flex items-center justify-between text-gray-600 cursor-not-allowed">
+                            <div className="flex items-center gap-3">
+                                <ShieldOff className="w-4 h-4 shrink-0" />
+                                <span className="line-through text-xs">Chuyển vào thùng rác</span>
+                            </div>
+                            <span className="text-[10px] text-gray-600">Chỉ xem</span>
                         </div>
-                        <span className="text-[11px] text-gray-400 font-mono">Delete</span>
-                    </button>
+                    )}
 
                     {/* 8. Không phải mục đề xuất hữu ích */}
                     {activeTab === 'home' && (

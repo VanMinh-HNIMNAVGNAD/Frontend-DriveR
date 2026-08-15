@@ -4,25 +4,26 @@ import { storageApi } from '../../services/api';
 import { formatBytes } from '../../utils/formatFileSize';
 import * as XLSX from 'xlsx';
 import mammoth from 'mammoth';
+import * as pdfjsLib from 'pdfjs-dist';
 import FileSkeleton from '../common/FileSkeleton';
 import ContextMenu from './ContextMenu';
 import RenameModal from './RenameModal';
 import ShareModal from './ShareModal';
 import GeminiModal from './GeminiModal';
-import { 
-    Folder, 
-    FileText, 
-    FileSpreadsheet, 
-    Image as ImageIcon, 
-    FileCode, 
-    FileArchive, 
-    File, 
-    Video, 
-    Music, 
-    Database, 
-    Layers, 
-    Star, 
-    MoreVertical, 
+import {
+    Folder,
+    FileText,
+    FileSpreadsheet,
+    Image as ImageIcon,
+    FileCode,
+    FileArchive,
+    File,
+    Video,
+    Music,
+    Database,
+    Layers,
+    Star,
+    MoreVertical,
     FolderOpen,
     ChevronLeft,
     ChevronRight,
@@ -37,28 +38,23 @@ import {
 
 // ── Mini thumbnail helpers ──────────────────────────────────────
 const MAX_THUMBNAIL_SIZE = 10 * 1024 * 1024; // 10MB
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+    'pdfjs-dist/build/pdf.worker.min.mjs',
+    import.meta.url
+).toString();
 
 function getFileCategoryForThumb(name = '') {
     const n = name.toLowerCase();
     if (n.endsWith('.pdf')) return 'pdf';
-    if (n.endsWith('.xlsx') || n.endsWith('.csv')) return 'sheet';
-    if (n.endsWith('.png') || n.endsWith('.jpg') || n.endsWith('.jpeg') || n.endsWith('.svg') || n.endsWith('.webp') || n.endsWith('.gif')) return 'image';
-    if (n.endsWith('.mp4') || n.endsWith('.mkv') || n.endsWith('.mov')) return 'video';
-    if (n.endsWith('.docx') || n.endsWith('.doc')) return 'docx';
-    if (n.endsWith('.txt') || n.endsWith('.md')) return 'textdoc';
-    // Code + JSON + YAML + XML + shell + ...
-    if (
-        n.endsWith('.js') || n.endsWith('.jsx') || n.endsWith('.ts') || n.endsWith('.tsx') ||
-        n.endsWith('.py') || n.endsWith('.java') || n.endsWith('.c') || n.endsWith('.cpp') ||
-        n.endsWith('.cs') || n.endsWith('.go') || n.endsWith('.rb') || n.endsWith('.php') ||
-        n.endsWith('.sh') || n.endsWith('.bash') || n.endsWith('.zsh') ||
-        n.endsWith('.json') || n.endsWith('.xml') || n.endsWith('.yaml') || n.endsWith('.yml') ||
-        n.endsWith('.toml') || n.endsWith('.ini') || n.endsWith('.env') ||
-        n.endsWith('.css') || n.endsWith('.scss') || n.endsWith('.html') || n.endsWith('.htm') ||
-        n.endsWith('.vue') || n.endsWith('.svelte') || n.endsWith('.kt') || n.endsWith('.swift') ||
-        n.endsWith('.rs') || n.endsWith('.dart') || n.endsWith('.lua') || n.endsWith('.sql') ||
-        n.endsWith('.exe')
-    ) return 'code';
+    if (n.endsWith('.xlsx') || n.endsWith('.csv') || n.endsWith('.xls')) return 'sheet';
+    if (/\.(png|jpg|jpeg|svg|webp|gif|bmp|ico)$/i.test(n)) return 'image';
+    if (/\.(mp4|mkv|mov|webm)$/i.test(n)) return 'video';
+    if (/\.(docx|doc)$/i.test(n)) return 'docx';
+    if (/\.(txt|md|markdown|log|env|conf|ini)$/i.test(n)) return 'textdoc';
+    // Danh sách mở rộng toàn bộ các file code
+    if (/\.(js|jsx|ts|tsx|py|java|c|cpp|h|hpp|cs|go|rb|php|sh|bash|zsh|json|xml|yaml|yml|toml|css|scss|sass|html|htm|vue|svelte|kt|swift|rs|dart|lua|sql|prisma|graphql)$/i.test(n)) {
+        return 'code';
+    }
     return 'none';
 }
 
@@ -68,7 +64,6 @@ function getFileCategoryForThumb(name = '') {
  */
 function FileRowThumb({ file }) {
     const cat = getFileCategoryForThumb(file?.name);
-    // thumbType: 'image'|'video'|'pdf-blob'|'sheet'|'text'|null
     const [thumbType, setThumbType] = useState(null);
     const [thumbUrl, setThumbUrl] = useState(null);
     const [textContent, setTextContent] = useState(null);
@@ -77,12 +72,9 @@ function FileRowThumb({ file }) {
     useEffect(() => {
         if (!file?.id || cat === 'none') return;
         const sizeOk = !file.size || file.size <= MAX_THUMBNAIL_SIZE;
-        if (!sizeOk) return; // quá lớn → fallback icon ngay
+        if (!sizeOk) return;
 
         let isMounted = true;
-        let blobUrlToRevoke = null;
-
-        const n = file.name.toLowerCase();
 
         if (cat === 'image' || cat === 'video') {
             storageApi.getPreviewUrl(file.id)
@@ -94,19 +86,35 @@ function FileRowThumb({ file }) {
                 }).catch(() => {});
 
         } else if (cat === 'pdf') {
+            // Sửa triệt để: Dùng fetch arrayBuffer để render Canvas, KHÔNG dùng iframe
             (async () => {
                 try {
                     const res = await storageApi.getPreviewUrl(file.id);
                     if (!res?.previewUrl || !isMounted) return;
-                    const response = await fetch(res.previewUrl);
-                    if (!response.ok || !isMounted) return;
-                    const buffer = await response.arrayBuffer();
+
+                    const pdfData = await fetch(res.previewUrl).then(r => r.arrayBuffer());
                     if (!isMounted) return;
-                    const blob = new Blob([buffer], { type: 'application/pdf' });
-                    blobUrlToRevoke = URL.createObjectURL(blob);
-                    setThumbUrl(blobUrlToRevoke);
-                    setThumbType('pdf-blob');
-                } catch { /* fallback icon */ }
+
+                    const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+                    const pdf = await loadingTask.promise;
+                    if (!isMounted) return;
+
+                    const page = await pdf.getPage(1);
+                    const viewport = page.getViewport({ scale: 0.3 });
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+
+                    await page.render({ canvasContext: context, viewport }).promise;
+
+                    if (isMounted) {
+                        setThumbUrl(canvas.toDataURL('image/jpeg', 0.8));
+                        setThumbType('image'); // Render dưới dạng ảnh thông thường, không bị popup download
+                    }
+                } catch {
+                    // Fallback tự động về icon mặc định nếu lỗi
+                }
             })();
 
         } else if (cat === 'sheet') {
@@ -145,11 +153,11 @@ function FileRowThumb({ file }) {
                 } catch { /* fallback icon */ }
             })();
 
-        } else if (cat === 'textdoc' || cat === 'code') {
+        } else if (cat === 'code' || cat === 'textdoc') {
             storageApi.getFileTextContent(file.id)
                 .then(res => {
                     if (isMounted && res?.content) {
-                        setTextContent(res.content.slice(0, 80));
+                        setTextContent(res.content.slice(0, 100));
                         setThumbType('text');
                     }
                 }).catch(() => {});
@@ -157,7 +165,6 @@ function FileRowThumb({ file }) {
 
         return () => {
             isMounted = false;
-            if (blobUrlToRevoke) URL.revokeObjectURL(blobUrlToRevoke);
         };
     }, [cat, file?.id, file?.size]);
 
@@ -165,25 +172,13 @@ function FileRowThumb({ file }) {
 
     return (
         <div className="w-10 h-7 rounded overflow-hidden flex-shrink-0 bg-gray-100 border border-gray-200/60" style={{ minWidth: '2.5rem' }}>
-            {thumbType === 'image' && thumbUrl ? (
+            {thumbType === 'image' && thumbUrl && (
                 <img src={thumbUrl} alt={file.name} className="w-full h-full object-cover" />
-
-            ) : thumbType === 'video' && thumbUrl ? (
-                <video
-                    src={thumbUrl} muted preload="metadata"
-                    className="w-full h-full object-cover pointer-events-none"
-                    onLoadedMetadata={(e) => { e.target.currentTime = 1; }}
-                />
-
-            ) : thumbType === 'pdf-blob' && thumbUrl ? (
-                <iframe
-                    src={`${thumbUrl}#toolbar=0&navpanes=0&scrollbar=0&page=1&view=FitH`}
-                    title={file.name}
-                    className="pointer-events-none border-0"
-                    style={{ width: '200%', height: '200%', transform: 'scale(0.5)', transformOrigin: 'top left' }}
-                />
-
-            ) : thumbType === 'sheet' && sheetData ? (
+            )}
+            {thumbType === 'video' && thumbUrl && (
+                <video src={thumbUrl} muted preload="metadata" className="w-full h-full object-cover pointer-events-none" />
+            )}
+            {thumbType === 'sheet' && sheetData && (
                 <div className="w-full h-full bg-emerald-50 p-px overflow-hidden">
                     <table className="w-full border-collapse" style={{ fontSize: '5px', lineHeight: 1.2 }}>
                         <tbody>
@@ -199,30 +194,27 @@ function FileRowThumb({ file }) {
                         </tbody>
                     </table>
                 </div>
-
-            ) : thumbType === 'text' && textContent ? (
-                <div className="w-full h-full bg-gray-50 p-0.5 overflow-hidden">
-                    <pre className="text-[6px] font-mono leading-tight opacity-50 whitespace-pre-wrap break-all text-gray-700" style={{ overflow: 'hidden', maxHeight: '100%' }}>
-                        {textContent}
-                    </pre>
+            )}
+            {thumbType === 'text' && textContent && (
+                <div className="w-full h-full bg-slate-900 text-emerald-400 p-0.5 overflow-hidden font-mono text-[5px] leading-none opacity-80 select-none">
+                    {textContent}
                 </div>
-
-            ) : null}
+            )}
         </div>
     );
 }
 // ──────────────────────────────────────────────────────────────────
 
 export default function FileListView() {
-    const { 
-        folders, 
-        files, 
-        currentFilteredItems, 
-        openFolder, 
-        toggleStar, 
-        moveToTrash, 
-        restoreFromTrash, 
-        deletePermanently, 
+    const {
+        folders,
+        files,
+        currentFilteredItems,
+        openFolder,
+        toggleStar,
+        moveToTrash,
+        restoreFromTrash,
+        deletePermanently,
         renameItem,
         openInfoDrawer,
         openPreview,
@@ -234,9 +226,9 @@ export default function FileListView() {
         pageSize,
         totalItems,
         totalPages,
-        sortField, 
+        sortField,
         setSortField,
-        sortDirection, 
+        sortDirection,
         setSortDirection,
         // Selection
         selectedIds,
@@ -390,12 +382,12 @@ export default function FileListView() {
                                     )}
                                 </button>
                             </th>
-                            
+
                             {/* Star Header */}
                             <th className="py-3 px-3 w-8 text-center"></th>
-                            
+
                             {/* Name Header */}
-                            <th 
+                            <th
                                 onClick={() => handleSort('name')}
                                 className="py-3 px-3 font-semibold hover:text-gray-900 cursor-pointer transition-colors"
                             >
@@ -408,7 +400,7 @@ export default function FileListView() {
                             </th>
 
                             {/* Size Header */}
-                            <th 
+                            <th
                                 onClick={() => handleSort('size')}
                                 className="py-3 px-3 font-semibold hover:text-gray-900 cursor-pointer transition-colors"
                             >
@@ -421,7 +413,7 @@ export default function FileListView() {
                             </th>
 
                             {/* Type Header (Hidden on Mobile & Tablet) */}
-                            <th 
+                            <th
                                 onClick={() => handleSort('type')}
                                 className="py-3 px-3 font-semibold hover:text-gray-900 cursor-pointer transition-colors hidden lg:table-cell"
                             >
@@ -434,7 +426,7 @@ export default function FileListView() {
                             </th>
 
                             {/* Owner Header (Hidden on Mobile) */}
-                            <th 
+                            <th
                                 onClick={() => handleSort('owner')}
                                 className="py-3 px-3 font-semibold hover:text-gray-900 cursor-pointer transition-colors hidden sm:table-cell"
                             >
@@ -447,7 +439,7 @@ export default function FileListView() {
                             </th>
 
                             {/* Modified Header (Hidden on Mobile) */}
-                            <th 
+                            <th
                                 onClick={() => handleSort('updatedAt')}
                                 className="py-3 px-3 font-semibold hover:text-gray-900 cursor-pointer transition-colors hidden sm:table-cell"
                             >
@@ -470,95 +462,115 @@ export default function FileListView() {
                             const itemSelected = isSelected(folder.id);
                             const isCut = clipboard.mode === 'cut' && clipboard.items.some((e) => e.id === folder.id);
                             return (
-                            <tr
-                                key={folder.id}
-                                tabIndex={0}
-                                onKeyDown={(e) => handleKeyDown(e, folder)}
-                                onDoubleClick={() => handleItemDoubleClick(folder)}
-                                onContextMenu={(e) => openContextMenu(e, folder)}
-                                className={`transition-colors group cursor-pointer ${
-                                    isCut ? 'opacity-50 border-dashed' : ''
-                                } ${
-                                    itemSelected
-                                        ? 'bg-blue-50 ring-1 ring-inset ring-blue-200'
-                                        : 'hover:bg-gray-50'
-                                }`}
-                            >
-                                {/* Checkbox Column – only this triggers selection */}
-                                <td
-                                    className="py-2.5 px-3 text-center"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (e.shiftKey) {
-                                            e.preventDefault();
-                                            selectRange(folder.id, folders, files);
-                                        } else {
-                                            toggleSelect(folder.id);
-                                        }
-                                    }}
+                                <tr
+                                    key={folder.id}
+                                    tabIndex={0}
+                                    onKeyDown={(e) => handleKeyDown(e, folder)}
+                                    onDoubleClick={() => handleItemDoubleClick(folder)}
+                                    onContextMenu={(e) => openContextMenu(e, folder)}
+                                    className={`transition-colors group cursor-pointer ${isCut ? 'opacity-50 border-dashed' : ''
+                                        } ${itemSelected
+                                            ? 'bg-blue-50 ring-1 ring-inset ring-blue-200'
+                                            : 'hover:bg-gray-50'
+                                        }`}
                                 >
-                                    <button className="flex items-center justify-center text-gray-300 hover:text-blue-600 transition-colors">
-                                        {itemSelected
-                                            ? <CheckSquare className="w-4 h-4 text-blue-600" />
-                                            : <Square className="w-4 h-4" />}
-                                    </button>
-                                </td>
-
-                                {/* Star Column – moved after checkbox */}
-                                <td className="py-2.5 px-3 text-center">
-                                    <button
+                                    {/* Checkbox Column – only this triggers selection */}
+                                    <td
+                                        className="py-2.5 px-3 text-center"
                                         onClick={(e) => {
                                             e.stopPropagation();
-                                            toggleStar(folder.id);
+                                            if (e.shiftKey) {
+                                                e.preventDefault();
+                                                selectRange(folder.id, folders, files);
+                                            } else {
+                                                toggleSelect(folder.id);
+                                            }
                                         }}
-                                        className="text-gray-300 hover:text-amber-400 p-1"
                                     >
-                                        <Star className={`w-4 h-4 ${folder.isStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
-                                    </button>
-                                </td>
+                                        <button className="flex items-center justify-center text-gray-300 hover:text-blue-600 transition-colors">
+                                            {itemSelected
+                                                ? <CheckSquare className="w-4 h-4 text-blue-600" />
+                                                : <Square className="w-4 h-4" />}
+                                        </button>
+                                    </td>
 
-                                {/* Name Column */}
-                                <td className="py-2.5 px-3">
-                                    <div className="flex items-center gap-2.5">
-                                        <div className="p-1.5 rounded-lg bg-amber-50 text-amber-600 shrink-0">
-                                            <Folder className="w-4 h-4 fill-amber-400" />
+                                    {/* Star Column – moved after checkbox */}
+                                    <td className="py-2.5 px-3 text-center">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                toggleStar(folder.id);
+                                            }}
+                                            className="text-gray-300 hover:text-amber-400 p-1"
+                                        >
+                                            <Star className={`w-4 h-4 ${folder.isStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
+                                        </button>
+                                    </td>
+
+                                    {/* Name Column */}
+                                    <td className="py-2.5 px-3">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="p-1.5 rounded-lg bg-amber-50 text-amber-600 shrink-0">
+                                                <Folder className="w-4 h-4 fill-amber-400" />
+                                            </div>
+                                            <span className="font-semibold text-gray-900 group-hover:text-blue-600 truncate max-w-[200px]" title={folder.name}>
+                                                {folder.name}
+                                            </span>
                                         </div>
-                                        <span className="font-semibold text-gray-900 group-hover:text-blue-600 truncate max-w-[200px]" title={folder.name}>
-                                            {folder.name}
+                                    </td>
+
+                                    {/* Size Column */}
+                                    <td className="py-2.5 px-3 text-gray-500 font-mono text-[11px]">--</td>
+
+                                    {/* Type Column */}
+                                    <td className="py-2.5 px-3 hidden lg:table-cell">
+                                        <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-medium text-[11px] border border-amber-200/60">
+                                            Thư mục
                                         </span>
-                                    </div>
-                                </td>
+                                    </td>
 
-                                {/* Size Column */}
-                                <td className="py-2.5 px-3 text-gray-500 font-mono text-[11px]">--</td>
+                                    {/* Owner Column */}
+                                    <td className="py-2.5 px-3 text-gray-700 font-medium truncate max-w-[140px] hidden sm:table-cell">
+                                        {activeTab === 'shared-with-me' && folder.sharedOwner ? (
+                                            <div className="flex items-center gap-2">
+                                                {folder.sharedOwner.avatarUrl ? (
+                                                    <img src={folder.sharedOwner.avatarUrl} alt="" className="w-5 h-5 rounded-full object-cover shrink-0" />
+                                                ) : (
+                                                    <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-[9px] font-bold shrink-0">
+                                                        {folder.sharedOwner.fullName?.charAt(0)?.toUpperCase() || '?'}
+                                                    </div>
+                                                )}
+                                                <span className="truncate text-[11px]">{folder.sharedOwner.fullName || folder.owner}</span>
+                                                <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded-md font-bold ${
+                                                    folder.sharedRole === 'EDITOR' 
+                                                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' 
+                                                        : 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-400'
+                                                }`}>
+                                                    {folder.sharedRole === 'EDITOR' ? 'Sửa' : 'Xem'}
+                                                </span>
+                                            </div>
+                                        ) : (
+                                            folder.owner || 'Tôi'
+                                        )}
+                                    </td>
 
-                                {/* Type Column */}
-                                <td className="py-2.5 px-3 hidden lg:table-cell">
-                                    <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-medium text-[11px] border border-amber-200/60">
-                                        Thư mục
-                                    </span>
-                                </td>
+                                    {/* Modified Column */}
+                                    <td className="py-2.5 px-3 text-gray-500 font-mono text-[11px] whitespace-nowrap hidden sm:table-cell">
+                                        {activeTab === 'shared-with-me' && folder.sharedAt 
+                                            ? folder.sharedAt 
+                                            : folder.updatedAt}
+                                    </td>
 
-                                {/* Owner Column */}
-                                <td className="py-2.5 px-3 text-gray-700 font-medium truncate max-w-[100px] hidden sm:table-cell">
-                                    {folder.owner || 'Tôi'}
-                                </td>
-
-                                {/* Modified Column */}
-                                <td className="py-2.5 px-3 text-gray-500 font-mono text-[11px] whitespace-nowrap hidden sm:table-cell">
-                                    {folder.updatedAt}
-                                </td>
-
-                                {/* Action Options */}
-                                <td className="py-2.5 px-3 text-center">
-                                    <button
-                                        onClick={(e) => openContextMenu(e, folder)}
-                                        className="p-1 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-                                    >
-                                        <MoreVertical className="w-4 h-4" />
-                                    </button>
-                                </td>
-                            </tr>
+                                    {/* Action Options */}
+                                    <td className="py-2.5 px-3 text-center">
+                                        <button
+                                            onClick={(e) => openContextMenu(e, folder)}
+                                            className="p-1 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                                        >
+                                            <MoreVertical className="w-4 h-4" />
+                                        </button>
+                                    </td>
+                                </tr>
                             );
                         })}
 
@@ -567,96 +579,116 @@ export default function FileListView() {
                             const itemSelected = isSelected(file.id);
                             const isCut = clipboard.mode === 'cut' && clipboard.items.some((e) => e.id === file.id);
                             return (
-                            <tr
-                                key={file.id}
-                                tabIndex={0}
-                                onKeyDown={(e) => handleKeyDown(e, file)}
-                                onDoubleClick={() => handleItemDoubleClick(file)}
-                                onContextMenu={(e) => openContextMenu(e, file)}
-                                className={`transition-colors group cursor-pointer ${
-                                    isCut ? 'opacity-50 border-dashed' : ''
-                                } ${
-                                    itemSelected
-                                        ? 'bg-blue-50 ring-1 ring-inset ring-blue-200'
-                                        : 'hover:bg-gray-50'
-                                }`}
-                            >
-                                {/* Checkbox Column – only this triggers selection */}
-                                <td
-                                    className="py-2.5 px-3 text-center"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (e.shiftKey) {
-                                            e.preventDefault();
-                                            selectRange(file.id, folders, files);
-                                        } else {
-                                            toggleSelect(file.id);
-                                        }
-                                    }}
+                                <tr
+                                    key={file.id}
+                                    tabIndex={0}
+                                    onKeyDown={(e) => handleKeyDown(e, file)}
+                                    onDoubleClick={() => handleItemDoubleClick(file)}
+                                    onContextMenu={(e) => openContextMenu(e, file)}
+                                    className={`transition-colors group cursor-pointer ${isCut ? 'opacity-50 border-dashed' : ''
+                                        } ${itemSelected
+                                            ? 'bg-blue-50 ring-1 ring-inset ring-blue-200'
+                                            : 'hover:bg-gray-50'
+                                        }`}
                                 >
-                                    <button className="flex items-center justify-center text-gray-300 hover:text-blue-600 transition-colors">
-                                        {itemSelected
-                                            ? <CheckSquare className="w-4 h-4 text-blue-600" />
-                                            : <Square className="w-4 h-4" />}
-                                    </button>
-                                </td>
-
-                                {/* Star Column */}
-                                <td className="py-2.5 px-3 text-center">
-                                    <button
+                                    {/* Checkbox Column – only this triggers selection */}
+                                    <td
+                                        className="py-2.5 px-3 text-center"
                                         onClick={(e) => {
                                             e.stopPropagation();
-                                            toggleStar(file.id);
+                                            if (e.shiftKey) {
+                                                e.preventDefault();
+                                                selectRange(file.id, folders, files);
+                                            } else {
+                                                toggleSelect(file.id);
+                                            }
                                         }}
-                                        className="text-gray-300 hover:text-amber-400 p-1"
                                     >
-                                        <Star className={`w-4 h-4 ${file.isStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
-                                    </button>
-                                </td>
+                                        <button className="flex items-center justify-center text-gray-300 hover:text-blue-600 transition-colors">
+                                            {itemSelected
+                                                ? <CheckSquare className="w-4 h-4 text-blue-600" />
+                                                : <Square className="w-4 h-4" />}
+                                        </button>
+                                    </td>
 
-                                {/* Name Column */}
-                                <td className="py-2.5 px-3">
-                                    <div className="flex items-center gap-2">
-                                        {getFileIcon(file)}
-                                        <FileRowThumb file={file} />
-                                        <span className="font-semibold text-gray-900 group-hover:text-blue-600 truncate max-w-[180px]" title={file.name}>
-                                            {file.name}
+                                    {/* Star Column */}
+                                    <td className="py-2.5 px-3 text-center">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                toggleStar(file.id);
+                                            }}
+                                            className="text-gray-300 hover:text-amber-400 p-1"
+                                        >
+                                            <Star className={`w-4 h-4 ${file.isStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
+                                        </button>
+                                    </td>
+
+                                    {/* Name Column */}
+                                    <td className="py-2.5 px-3">
+                                        <div className="flex items-center gap-2">
+                                            {getFileIcon(file)}
+                                            <FileRowThumb file={file} />
+                                            <span className="font-semibold text-gray-900 group-hover:text-blue-600 truncate max-w-[180px]" title={file.name}>
+                                                {file.name}
+                                            </span>
+                                        </div>
+                                    </td>
+
+                                    {/* Size Column */}
+                                    <td className="py-2.5 px-3 text-gray-700 font-mono font-medium text-[11px]">
+                                        {formatBytes(file.size)}
+                                    </td>
+
+                                    {/* Type Column */}
+                                    <td className="py-2.5 px-3 hidden lg:table-cell">
+                                        <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-medium text-[11px] border border-blue-200/60 whitespace-nowrap">
+                                            {getFileTypeLabel(file)}
                                         </span>
-                                    </div>
-                                </td>
+                                    </td>
 
-                                {/* Size Column */}
-                                <td className="py-2.5 px-3 text-gray-700 font-mono font-medium text-[11px]">
-                                    {formatBytes(file.size)}
-                                </td>
+                                    {/* Owner Column */}
+                                    <td className="py-2.5 px-3 text-gray-700 font-medium truncate max-w-[140px] hidden sm:table-cell">
+                                        {activeTab === 'shared-with-me' && file.sharedOwner ? (
+                                            <div className="flex items-center gap-2">
+                                                {file.sharedOwner.avatarUrl ? (
+                                                    <img src={file.sharedOwner.avatarUrl} alt="" className="w-5 h-5 rounded-full object-cover shrink-0" />
+                                                ) : (
+                                                    <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-[9px] font-bold shrink-0">
+                                                        {file.sharedOwner.fullName?.charAt(0)?.toUpperCase() || '?'}
+                                                    </div>
+                                                )}
+                                                <span className="truncate text-[11px]">{file.sharedOwner.fullName || file.owner}</span>
+                                                <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded-md font-bold ${
+                                                    file.sharedRole === 'EDITOR' 
+                                                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' 
+                                                        : 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-400'
+                                                }`}>
+                                                    {file.sharedRole === 'EDITOR' ? 'Sửa' : 'Xem'}
+                                                </span>
+                                            </div>
+                                        ) : (
+                                            file.owner || 'Tôi'
+                                        )}
+                                    </td>
 
-                                {/* Type Column */}
-                                <td className="py-2.5 px-3 hidden lg:table-cell">
-                                    <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-medium text-[11px] border border-blue-200/60 whitespace-nowrap">
-                                        {getFileTypeLabel(file)}
-                                    </span>
-                                </td>
+                                    {/* Modified Column */}
+                                    <td className="py-2.5 px-3 text-gray-500 font-mono text-[11px] whitespace-nowrap hidden sm:table-cell">
+                                        {activeTab === 'shared-with-me' && file.sharedAt 
+                                            ? file.sharedAt 
+                                            : file.updatedAt}
+                                    </td>
 
-                                {/* Owner Column */}
-                                <td className="py-2.5 px-3 text-gray-700 font-medium truncate max-w-[100px] hidden sm:table-cell">
-                                    {file.owner || 'Tôi'}
-                                </td>
-
-                                {/* Modified Column */}
-                                <td className="py-2.5 px-3 text-gray-500 font-mono text-[11px] whitespace-nowrap hidden sm:table-cell">
-                                    {file.updatedAt}
-                                </td>
-
-                                {/* Action Options */}
-                                <td className="py-2.5 px-3 text-center">
-                                    <button
-                                        onClick={(e) => openContextMenu(e, file)}
-                                        className="p-1 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-                                    >
-                                        <MoreVertical className="w-4 h-4" />
-                                    </button>
-                                </td>
-                            </tr>
+                                    {/* Action Options */}
+                                    <td className="py-2.5 px-3 text-center">
+                                        <button
+                                            onClick={(e) => openContextMenu(e, file)}
+                                            className="p-1 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                                        >
+                                            <MoreVertical className="w-4 h-4" />
+                                        </button>
+                                    </td>
+                                </tr>
                             );
                         })}
                     </tbody>

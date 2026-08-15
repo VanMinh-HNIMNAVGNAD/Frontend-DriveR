@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { formatBytes } from '../../utils/formatFileSize';
 import { 
   X, 
@@ -13,12 +13,180 @@ import {
   FileAudio, 
   FileText, 
   Loader2, 
-  ExternalLink 
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { useFiles } from '../../context/FileContext';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import mammoth from 'mammoth';
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Khởi tạo Worker an toàn cho PDF.js
+if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+    'pdfjs-dist/build/pdf.worker.min.mjs',
+    import.meta.url
+  ).toString();
+}
+
+/**
+ * Component Canvas chuyên dụng xem PDF nhiều trang, hỗ trợ High-DPI
+ */
+function PdfCanvasViewer({ url, zoom = 1, rotation = 0 }) {
+  const [pdfDoc, setPdfDoc] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [numPages, setNumPages] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const canvasRef = useRef(null);
+  const renderTaskRef = useRef(null);
+
+  // 1. Tải tài liệu PDF nhị phân từ URL
+  useEffect(() => {
+    if (!url || typeof url !== 'string') return;
+
+    let isMounted = true;
+    setLoading(true);
+    setError(null);
+    setCurrentPage(1);
+
+    (async () => {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`Máy chủ lưu trữ phản hồi mã lỗi: ${response.status}`);
+        }
+        const pdfData = await response.arrayBuffer();
+        if (!isMounted) return;
+
+        const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+        const loadedPdf = await loadingTask.promise;
+        if (!isMounted) return;
+
+        setPdfDoc(loadedPdf);
+        setNumPages(loadedPdf.numPages);
+      } catch (err) {
+        if (isMounted) {
+          console.error('[PDF Preview Error]', err);
+          setError('Không thể đọc dữ liệu PDF từ Cloud. Vui lòng tải xuống để xem.');
+        }
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [url]);
+
+  // 2. Vẽ trang PDF lên Canvas
+  useEffect(() => {
+    if (!pdfDoc || !canvasRef.current) return;
+
+    // Hủy render task trước nếu người dùng bấm trang/zoom liên tục
+    if (renderTaskRef.current) {
+      try {
+        renderTaskRef.current.cancel();
+      } catch {}
+    }
+
+    (async () => {
+      try {
+        const page = await pdfDoc.getPage(currentPage);
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const context = canvas.getContext('2d');
+
+        // Scale 1.5x cơ sở để chữ sắc nét
+        const scale = 1.5 * zoom;
+        const viewport = page.getViewport({ scale, rotation });
+
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        const renderContext = {
+          canvasContext: context,
+          viewport: viewport,
+        };
+
+        const task = page.render(renderContext);
+        renderTaskRef.current = task;
+        await task.promise;
+      } catch (err) {
+        if (err?.name !== 'RenderingCancelledException') {
+          console.error('[PDF Render Error]', err);
+        }
+      }
+    })();
+
+    return () => {
+      if (renderTaskRef.current) {
+        try {
+          renderTaskRef.current.cancel();
+        } catch {}
+      }
+    };
+  }, [pdfDoc, currentPage, zoom, rotation]);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 text-slate-400 py-20">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+        <p className="text-sm font-medium">Đang giải mã và kết xuất trang PDF...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6 text-center text-red-300 bg-red-500/10 border border-red-500/20 rounded-2xl max-w-md">
+        <p className="text-sm">{error}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full h-full flex flex-col items-center overflow-hidden">
+      {/* Vùng Canvas hiển thị PDF */}
+      <div className="flex-1 w-full overflow-auto flex items-center justify-center p-4">
+        <canvas
+          ref={canvasRef}
+          className="max-w-full max-h-full object-contain rounded-lg shadow-2xl bg-white transition-all duration-100"
+          style={{ maxWidth: '100%', height: 'auto' }}
+        />
+      </div>
+
+      {/* Thanh chuyển trang */}
+      {numPages > 1 && (
+        <div className="flex items-center gap-3 px-4 py-2 mt-2 bg-slate-900/90 border border-white/10 rounded-full shadow-lg shrink-0 select-none">
+          <button
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            disabled={currentPage <= 1}
+            className="p-1.5 rounded-full hover:bg-white/10 text-white disabled:opacity-30 transition-colors cursor-pointer"
+            title="Trang trước"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+
+          <span className="text-xs font-mono text-slate-300 font-semibold">
+            Trang {currentPage} / {numPages}
+          </span>
+
+          <button
+            onClick={() => setCurrentPage((p) => Math.min(numPages, p + 1))}
+            disabled={currentPage >= numPages}
+            className="p-1.5 rounded-full hover:bg-white/10 text-white disabled:opacity-30 transition-colors cursor-pointer"
+            title="Trang sau"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function FilePreviewModal({ item, onClose }) {
   const { getPreviewUrl, getDownloadUrl, getFileTextContent } = useFiles();
@@ -39,10 +207,13 @@ export default function FilePreviewModal({ item, onClose }) {
 
     const fetchUrl = async () => {
       try {
-        const previewUrl = await getPreviewUrl(item.id);
+        const res = await getPreviewUrl(item.id);
+        // Trích xuất chính xác chuỗi URL (dù API trả về string hay object { previewUrl: "..." })
+        const validUrl = typeof res === 'string' ? res : (res?.previewUrl || res?.url || null);
+
         if (isMounted) {
-          if (previewUrl) {
-            setUrl(previewUrl);
+          if (validUrl) {
+            setUrl(validUrl);
           } else {
             setError('Không thể lấy được liên kết xem trước từ Cloud.');
           }
@@ -76,7 +247,7 @@ export default function FilePreviewModal({ item, onClose }) {
 
   if (!item) return null;
 
-  const handleZoomIn = () => setZoom((prev) => Math.min(prev + 0.25, 4));
+  const handleZoomIn = () => setZoom((prev) => Math.min(prev + 0.25, 3));
   const handleZoomOut = () => setZoom((prev) => Math.max(prev - 0.25, 0.5));
   const handleRotate = () => setRotation((prev) => (prev + 90) % 360);
   const handleReset = () => {
@@ -88,7 +259,7 @@ export default function FilePreviewModal({ item, onClose }) {
     const downloadUrl = await getDownloadUrl(item.id);
     if (downloadUrl) {
       const a = document.createElement('a');
-      a.href = downloadUrl;
+      a.href = typeof downloadUrl === 'string' ? downloadUrl : downloadUrl?.downloadUrl;
       a.download = item.name;
       document.body.appendChild(a);
       a.click();
@@ -124,17 +295,12 @@ export default function FilePreviewModal({ item, onClose }) {
     if (isCodeOrText && item) {
       getFileTextContent(item.id)
         .then((text) => {
-          if (text) {
-            setTextContent(text);
-          } else {
-            setTextContent('Không thể tải nội dung tệp văn bản/mã nguồn');
-          }
+          setTextContent(text?.content || text || 'Không thể tải nội dung tệp văn bản');
         })
         .catch(() => setTextContent('Không thể tải nội dung tệp văn bản/mã nguồn'));
     }
   }, [isCodeOrText, item]);
 
-  // State & Effect để tải và convert DOCX bằng mammoth.js
   const [docxHtml, setDocxHtml] = useState(null);
   const [docxLoading, setDocxLoading] = useState(false);
   const [docxError, setDocxError] = useState(null);
@@ -150,9 +316,7 @@ export default function FilePreviewModal({ item, onClose }) {
     const loadDocx = async () => {
       try {
         const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error('Không thể tải tệp Word từ đám mây.');
-        }
+        if (!response.ok) throw new Error('Không thể tải tệp Word từ đám mây.');
         const arrayBuffer = await response.arrayBuffer();
         const result = await mammoth.convertToHtml({ arrayBuffer });
         if (isMounted) {
@@ -161,12 +325,10 @@ export default function FilePreviewModal({ item, onClose }) {
       } catch (err) {
         if (isMounted) {
           console.error('[DOCX Preview Error]', err);
-          setDocxError(err.message || 'Lỗi khi giải mã và chuyển đổi tệp Word (.docx)');
+          setDocxError(err.message || 'Lỗi khi chuyển đổi tệp Word (.docx)');
         }
       } finally {
-        if (isMounted) {
-          setDocxLoading(false);
-        }
+        if (isMounted) setDocxLoading(false);
       }
     };
 
@@ -199,7 +361,7 @@ export default function FilePreviewModal({ item, onClose }) {
 
         {/* Toolbar Controls */}
         <div className="flex items-center gap-2">
-          {isImage && url && (
+          {(isImage || isPdf) && url && (
             <>
               <button
                 onClick={handleZoomOut}
@@ -214,7 +376,7 @@ export default function FilePreviewModal({ item, onClose }) {
               </span>
               <button
                 onClick={handleZoomIn}
-                disabled={zoom >= 4}
+                disabled={zoom >= 3}
                 className="p-2 rounded-xl bg-white/10 hover:bg-white/20 disabled:opacity-30 text-white transition-all cursor-pointer"
                 title="Phóng to (+)"
               >
@@ -261,7 +423,7 @@ export default function FilePreviewModal({ item, onClose }) {
         {loading && (
           <div className="flex flex-col items-center gap-3 text-slate-400">
             <Loader2 className="w-10 h-10 animate-spin text-blue-500" />
-            <p className="text-sm font-medium">Đang tải bản xem trước từ Đám Mây Multi-Cloud...</p>
+            <p className="text-sm font-medium">Đang nạp dữ liệu bản xem trước...</p>
           </div>
         )}
 
@@ -294,27 +456,66 @@ export default function FilePreviewModal({ item, onClose }) {
             )}
 
             {isVideo && (
-              <div className="max-w-4xl max-h-full w-full rounded-2xl overflow-hidden bg-black shadow-2xl border border-white/10">
-                <video src={url} controls autoPlay className="w-full max-h-[75vh]" />
+              <div className="max-w-4xl max-h-full w-full rounded-2xl overflow-hidden bg-black shadow-2xl border border-white/10 relative group flex flex-col items-center justify-center">
+                <div className="absolute top-4 left-4 right-4 bg-slate-900/90 backdrop-blur-md text-xs text-slate-300 p-3 rounded-xl border border-white/15 opacity-0 group-hover:opacity-100 transition-all duration-200 z-10 flex flex-wrap items-center justify-between gap-2 shadow-xl">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                    <span className="leading-relaxed">
+                      <strong>Lưu ý về âm thanh:</strong> Nếu video mất tiếng, tệp có thể dùng codec AC3/DTS. Vui lòng tải về mở bằng VLC.
+                    </span>
+                  </div>
+                  <button 
+                    onClick={handleDownload} 
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors font-semibold shadow-sm text-xs shrink-0 flex items-center gap-1.5"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Tải file gốc</span>
+                  </button>
+                </div>
+
+                <video
+                  src={url}
+                  controls
+                  playsInline
+                  className="w-full max-h-[75vh] object-contain"
+                />
               </div>
             )}
 
             {isAudio && (
-              <div className="p-8 bg-slate-900 border border-white/10 rounded-3xl shadow-2xl flex flex-col items-center gap-6 max-w-md w-full text-center">
-                <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-purple-500/30">
-                  <FileAudio className="w-10 h-10 text-white" />
+              <div className="p-8 bg-slate-900 border border-white/10 rounded-3xl shadow-2xl flex flex-col items-center gap-6 text-center max-w-md w-full">
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-indigo-500/30 to-purple-500/20 text-indigo-400 flex items-center justify-center border border-indigo-500/30 shadow-inner animate-pulse">
+                  <FileAudio className="w-10 h-10" />
                 </div>
-                <div>
-                  <h4 className="font-bold text-lg text-white mb-1">{item.name}</h4>
-                  <div className="text-[13px] text-white/50">{item.sizeBytes ? formatBytes(item.sizeBytes) : 'Không xác định'}</div>
+                <div className="space-y-1 max-w-full">
+                  <h4 className="font-bold text-white text-base truncate px-2" title={item.name}>
+                    {item.name}
+                  </h4>
+                  <p className="text-xs text-slate-400">
+                    Âm thanh • {formatBytes(item.sizeBytes)}
+                  </p>
                 </div>
-                <audio src={url} controls autoPlay className="w-full" />
+                <div className="w-full bg-slate-950/60 p-3 rounded-2xl border border-white/5">
+                  <audio
+                    src={url}
+                    controls
+                    className="w-full"
+                  />
+                </div>
+                <button
+                  onClick={handleDownload}
+                  className="flex items-center justify-center gap-2 w-full py-2.5 bg-white/10 hover:bg-white/20 text-xs font-semibold rounded-xl text-white transition-all cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Tải xuống tệp âm thanh gốc</span>
+                </button>
               </div>
             )}
 
+            {/* Render PDF Canvas chất lượng cao không bị popup tải về */}
             {isPdf && (
-              <div className="w-full h-full max-w-5xl rounded-2xl overflow-hidden bg-white shadow-2xl">
-                <iframe src={url} title={item.name} className="w-full h-full border-none" />
+              <div className="w-full h-full max-w-5xl rounded-2xl overflow-hidden bg-slate-900/80 border border-white/10 shadow-2xl flex flex-col items-center justify-center">
+                <PdfCanvasViewer url={url} zoom={zoom} rotation={rotation} />
               </div>
             )}
 

@@ -41,6 +41,10 @@ export function FileProvider({ children }) {
   }, [navigate, activeTab]);
 
   const openFolder = useCallback((folder) => {
+    if (!folder || !folder.id) {
+      navigate('/app/my-drive');
+      return;
+    }
     if (folder.sharedDriveId) {
       navigate(`/app/shared-drives/folders/${folder.id}`);
     } else {
@@ -198,13 +202,31 @@ export function FileProvider({ children }) {
       });
 
       const rawItems = response.items || [];
-      const formattedItems = rawItems.map((item) => ({
-        ...item,
-        owner: 'Tôi',
-        size: Number(item.sizeBytes || 0),
-        createdAt: item.createdAt ? new Date(item.createdAt).toLocaleString('vi-VN') : '',
-        updatedAt: item.updatedAt ? new Date(item.updatedAt).toLocaleString('vi-VN') : '',
-      }));
+      const formattedItems = rawItems.map((item) => {
+        const base = {
+          ...item,
+          size: Number(item.sizeBytes || 0),
+          createdAt: item.createdAt ? new Date(item.createdAt).toLocaleString('vi-VN') : '',
+          updatedAt: item.updatedAt ? new Date(item.updatedAt).toLocaleString('vi-VN') : '',
+        };
+
+        if (activeTab === 'shared-with-me') {
+          return {
+            ...base,
+            owner: item.sharedOwner?.fullName || 'Người dùng khác',
+            sharedOwner: item.sharedOwner || null,
+            sharedRole: item.sharedRole || 'VIEWER',
+            sharedAt: item.sharedAt
+              ? new Date(item.sharedAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+              : '',
+          };
+        }
+
+        return {
+          ...base,
+          owner: 'Tôi',
+        };
+      });
 
       setItems(formattedItems);
       if (response.meta) {
@@ -357,6 +379,21 @@ export function FileProvider({ children }) {
     categories: analytics?.categories || {},
   };
 
+  // Danh sách unique owners từ items hiện tại — dùng cho filter
+  const uniqueOwners = useMemo(() => {
+    const seen = new Set();
+    const owners = [];
+    for (const item of items) {
+      const name = item.owner || 'Tôi';
+      if (!seen.has(name)) {
+        seen.add(name);
+        owners.push(name);
+      }
+    }
+    return owners;
+  }, [items]);
+
+
   // Actions connecting to Backend
   const toggleStar = async (id) => {
     try {
@@ -425,13 +462,16 @@ export function FileProvider({ children }) {
     if (!folderName || !folderName.trim()) return;
     try {
       setIsLoading(true);
-      await filesApi.createFolder({
+      const payload = {
         name: folderName.trim(),
-        parentId: currentFolderId || undefined,
-      });
-      fetchFiles();
+        ...(currentFolderId ? { parentId: currentFolderId } : {}),
+      };
+      const res = await filesApi.createFolder(payload);
+      await fetchFiles();
+      return res;
     } catch (err) {
       alert('Không thể tạo thư mục: ' + err.message);
+      throw err;
     } finally {
       setIsLoading(false);
     }
@@ -445,10 +485,11 @@ export function FileProvider({ children }) {
   const createFolderSilent = async (name, parentId) => {
     if (!name || !name.trim()) return null;
     try {
-      const res = await filesApi.createFolder({
+      const payload = {
         name: name.trim(),
-        parentId: parentId || undefined,
-      });
+        ...(parentId ? { parentId } : {}),
+      };
+      const res = await filesApi.createFolder(payload);
       // Backend trả về dạng { id, name, ... } hoặc wrap trong data
       return res?.id || res?.data?.id || null;
     } catch (err) {
@@ -984,7 +1025,9 @@ export function FileProvider({ children }) {
         setFilterLocation,
         resetFilters,
         storageInfo,
+        uniqueOwners,
         folders: sortedFolders,
+
         files: sortedFiles,
         rawFolders: folders,
         rawFiles: files,
