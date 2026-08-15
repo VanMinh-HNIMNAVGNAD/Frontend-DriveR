@@ -42,6 +42,7 @@ export default function AppRouter() {
                 <Route path="shared-drives" element={<SharedDrivesPage />} />
                 <Route path="shared-drives/folders/:folderId" element={<SharedDrivesPage />} />
                 <Route path="shared-with-me" element={<SharedWithMePage />} />
+                <Route path="shared-with-me/folders/:folderId" element={<SharedWithMePage />} />
                 <Route path="recent" element={<RecentPage />} />
                 <Route path="starred" element={<StarredPage />} />
                 <Route path="spam" element={<SpamPage />} />

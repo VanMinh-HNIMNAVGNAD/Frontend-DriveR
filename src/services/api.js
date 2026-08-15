@@ -173,9 +173,11 @@ export const sharingApi = {
   /** Lấy thông tin tệp qua token chia sẻ (không cần đăng nhập) */
   getSharedItem: (token) => api.get(`/shares/${token}`),
   /** Sinh presigned preview URL (inline) qua token chia sẻ */
-  getSharedPreviewUrl: (token) => api.get(`/shares/${token}/preview-url`),
+  getSharedPreviewUrl: (token, fileId) =>
+    api.get(`/shares/${token}/preview-url`, { params: fileId ? { fileId } : {} }),
   /** Sinh presigned download URL qua token chia sẻ */
-  getSharedDownloadUrl: (token) => api.get(`/shares/${token}/download-url`),
+  getSharedDownloadUrl: (token, fileId) =>
+    api.get(`/shares/${token}/download-url`, { params: fileId ? { fileId } : {} }),
   /** Lấy danh sách file/folder con trong thư mục được chia sẻ (không cần đăng nhập) */
   getSharedChildren: (token, folderId) =>
     api.get(`/shares/${token}/children`, { params: folderId ? { folderId } : {} }),

@@ -3,6 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { sharingApi } from '../services/api';
 import { formatBytes } from '../utils/formatFileSize';
 import * as pdfjsLib from 'pdfjs-dist';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import mammoth from 'mammoth';
 
 // ─── Khởi tạo PDF.js Worker (an toàn, không trùng lặp) ───────────────────────
 if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
@@ -13,21 +16,27 @@ if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
 }
 
 // ─── Hằng số: loại MIME hỗ trợ preview ──────────────────────────────────────
-const PREVIEW_IMAGE = (mime) => mime?.startsWith('image/');
-const PREVIEW_VIDEO = (mime) => mime?.startsWith('video/');
-const PREVIEW_AUDIO = (mime) => mime?.startsWith('audio/');
-const PREVIEW_PDF   = (mime) => mime?.includes('pdf');
+const PREVIEW_IMAGE = (mime, name) => mime?.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico)$/i.test(name ?? '');
+const PREVIEW_VIDEO = (mime, name) => mime?.startsWith('video/') || /\.(mp4|webm|mov|mkv)$/i.test(name ?? '');
+const PREVIEW_AUDIO = (mime, name) => mime?.startsWith('audio/') || /\.(mp3|wav|ogg|m4a)$/i.test(name ?? '');
+const PREVIEW_PDF   = (mime, name) => mime?.includes('pdf') || /\.pdf$/i.test(name ?? '');
+const PREVIEW_DOCX  = (mime, name) =>
+  mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+  mime === 'application/msword' ||
+  /\.(docx|doc)$/i.test(name ?? '');
 const PREVIEW_TEXT  = (mime, name) =>
   mime?.startsWith('text/') ||
-  /\.(js|ts|jsx|tsx|py|json|html|css|md|txt|sql|sh|yaml|yml|env|toml|xml|csv)$/i.test(name ?? '');
+  /\.(js|jsx|ts|tsx|py|html|css|json|sql|md|txt|xml|yaml|yml|sh|env|conf|log|c|cpp|h|hpp|java|go|rs|kt|php|vue|svelte|cs)$/i.test(name ?? '');
 
 // ─── Helper: icon MIME ────────────────────────────────────────────────────────
-function mimeColor(mimeType, type) {
+function mimeColor(mimeType, type, name) {
   if (type === 'folder') return 'text-amber-400';
-  if (PREVIEW_IMAGE(mimeType)) return 'text-emerald-400';
-  if (PREVIEW_VIDEO(mimeType)) return 'text-violet-400';
-  if (PREVIEW_AUDIO(mimeType)) return 'text-pink-400';
-  if (PREVIEW_PDF(mimeType)) return 'text-rose-400';
+  if (PREVIEW_IMAGE(mimeType, name)) return 'text-emerald-400';
+  if (PREVIEW_VIDEO(mimeType, name)) return 'text-violet-400';
+  if (PREVIEW_AUDIO(mimeType, name)) return 'text-pink-400';
+  if (PREVIEW_PDF(mimeType, name)) return 'text-rose-400';
+  if (PREVIEW_DOCX(mimeType, name)) return 'text-blue-400';
+  if (PREVIEW_TEXT(mimeType, name)) return 'text-emerald-400';
   return 'text-slate-400';
 }
 
@@ -73,7 +82,7 @@ function SharePageError({ message, onGoHome }) {
       </p>
       <button
         onClick={onGoHome}
-        className="px-6 py-2.5 rounded-full bg-indigo-600 hover:bg-indigo-500 text-sm font-medium transition-colors"
+        className="px-6 py-2.5 rounded-full bg-indigo-600 hover:bg-indigo-500 text-sm font-medium transition-colors cursor-pointer"
       >
         Quay về trang chủ
       </button>
@@ -82,7 +91,7 @@ function SharePageError({ message, onGoHome }) {
 }
 
 // ─── PDF Canvas Viewer (dùng pdfjs-dist, không dùng iframe) ──────────────────
-function PdfCanvasViewer({ url }) {
+function PdfCanvasViewer({ url, zoom: externalZoom, rotation: externalRotation }) {
   const [pdfDoc, setPdfDoc]       = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [numPages, setNumPages]   = useState(0);
@@ -91,6 +100,9 @@ function PdfCanvasViewer({ url }) {
   const [error, setError]         = useState(null);
   const canvasRef                 = useRef(null);
   const renderTaskRef             = useRef(null);
+
+  const effectiveZoom = externalZoom !== undefined ? externalZoom : zoom;
+  const effectiveRotation = externalRotation !== undefined ? externalRotation : 0;
 
   // 1. Tải binary PDF từ presigned URL
   useEffect(() => {
@@ -138,7 +150,7 @@ function PdfCanvasViewer({ url }) {
         const canvas   = canvasRef.current;
         if (!canvas) return;
         const ctx      = canvas.getContext('2d');
-        const viewport = page.getViewport({ scale: 1.5 * zoom });
+        const viewport = page.getViewport({ scale: 1.5 * effectiveZoom, rotation: effectiveRotation });
 
         canvas.width  = viewport.width;
         canvas.height = viewport.height;
@@ -158,12 +170,12 @@ function PdfCanvasViewer({ url }) {
         try { renderTaskRef.current.cancel(); } catch {}
       }
     };
-  }, [pdfDoc, currentPage, zoom]);
+  }, [pdfDoc, currentPage, effectiveZoom, effectiveRotation]);
 
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 h-64 text-white/40">
-        <svg className="w-8 h-8 animate-spin" fill="none" viewBox="0 0 24 24">
+        <svg className="w-8 h-8 animate-spin text-indigo-400" fill="none" viewBox="0 0 24 24">
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4Z" />
         </svg>
@@ -181,9 +193,9 @@ function PdfCanvasViewer({ url }) {
   }
 
   return (
-    <div className="flex flex-col items-center gap-4">
+    <div className="flex flex-col items-center gap-4 w-full">
       {/* Canvas */}
-      <div className="w-full overflow-auto flex justify-center">
+      <div className="w-full overflow-auto flex justify-center max-h-[65vh]">
         <canvas
           ref={canvasRef}
           className="max-w-full rounded-lg shadow-2xl bg-white"
@@ -191,40 +203,41 @@ function PdfCanvasViewer({ url }) {
         />
       </div>
 
-      {/* Điều hướng trang + Thu phóng */}
+      {/* Điều hướng trang + Thu phóng (nếu không có external controls) */}
       <div className="flex items-center gap-3 px-4 py-2 bg-white/5 border border-white/8 rounded-full select-none">
-        {/* Thu nhỏ */}
-        <button
-          onClick={() => setZoom((z) => Math.max(0.5, z - 0.25))}
-          title="Thu nhỏ"
-          className="p-1.5 rounded-full hover:bg-white/10 text-white/60 hover:text-white transition-colors"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607ZM13.5 10.5h-6" />
-          </svg>
-        </button>
-        <span className="text-xs text-white/40 font-mono w-12 text-center">
-          {Math.round(zoom * 100)}%
-        </span>
-        {/* Phóng to */}
-        <button
-          onClick={() => setZoom((z) => Math.min(3, z + 0.25))}
-          title="Phóng to"
-          className="p-1.5 rounded-full hover:bg-white/10 text-white/60 hover:text-white transition-colors"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607ZM10.5 7.5v6m3-3h-6" />
-          </svg>
-        </button>
+        {externalZoom === undefined && (
+          <>
+            <button
+              onClick={() => setZoom((z) => Math.max(0.5, z - 0.25))}
+              title="Thu nhỏ"
+              className="p-1.5 rounded-full hover:bg-white/10 text-white/60 hover:text-white transition-colors cursor-pointer"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607ZM13.5 10.5h-6" />
+              </svg>
+            </button>
+            <span className="text-xs text-white/40 font-mono w-12 text-center">
+              {Math.round(effectiveZoom * 100)}%
+            </span>
+            <button
+              onClick={() => setZoom((z) => Math.min(3, z + 0.25))}
+              title="Phóng to"
+              className="p-1.5 rounded-full hover:bg-white/10 text-white/60 hover:text-white transition-colors cursor-pointer"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607ZM10.5 7.5v6m3-3h-6" />
+              </svg>
+            </button>
+            <span className="w-px h-4 bg-white/10 mx-1" />
+          </>
+        )}
 
         {numPages > 1 && (
           <>
-            <span className="w-px h-4 bg-white/10 mx-1" />
-            {/* Trang trước */}
             <button
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage <= 1}
-              className="p-1.5 rounded-full hover:bg-white/10 text-white disabled:opacity-30 transition-colors"
+              className="p-1.5 rounded-full hover:bg-white/10 text-white disabled:opacity-30 transition-colors cursor-pointer"
               title="Trang trước"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -234,11 +247,10 @@ function PdfCanvasViewer({ url }) {
             <span className="text-xs font-mono text-white/50 whitespace-nowrap">
               {currentPage} / {numPages}
             </span>
-            {/* Trang sau */}
             <button
               onClick={() => setCurrentPage((p) => Math.min(numPages, p + 1))}
               disabled={currentPage >= numPages}
-              className="p-1.5 rounded-full hover:bg-white/10 text-white disabled:opacity-30 transition-colors"
+              className="p-1.5 rounded-full hover:bg-white/10 text-white disabled:opacity-30 transition-colors cursor-pointer"
               title="Trang sau"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -252,11 +264,75 @@ function PdfCanvasViewer({ url }) {
   );
 }
 
-// ─── Text Preview (fetch & render inline) ────────────────────────────────────
-function TextPreview({ url }) {
+// ─── Word DOCX Preview ──────────────────────────────────────────────────────
+function DocxPreview({ url }) {
+  const [html, setHtml] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!url) return;
+    let mounted = true;
+    setLoading(true);
+    setError(null);
+    setHtml(null);
+
+    (async () => {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Không thể tải tệp Word từ đám mây.');
+        const arrayBuffer = await res.arrayBuffer();
+        const result = await mammoth.convertToHtml({ arrayBuffer });
+        if (mounted) {
+          setHtml(result.value || '<p class="text-slate-400 italic">Tài liệu không có nội dung văn bản.</p>');
+        }
+      } catch (err) {
+        if (mounted) {
+          console.error('[DOCX Preview Error]', err);
+          setError(err?.message || 'Lỗi khi chuyển đổi tệp Word (.docx)');
+        }
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+
+    return () => { mounted = false; };
+  }, [url]);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 h-64 text-white/40">
+        <svg className="w-8 h-8 animate-spin text-indigo-400" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4Z" />
+        </svg>
+        <span className="text-sm font-medium">Đang chuyển đổi tài liệu Word…</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-rose-300 text-sm text-center py-10 bg-rose-500/10 rounded-xl border border-rose-500/20 px-6">
+        {error}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="w-full max-w-4xl mx-auto bg-white text-slate-900 p-8 sm:p-12 rounded-xl shadow-2xl overflow-auto max-h-[65vh] prose prose-slate max-w-none text-left [&_table]:w-full [&_table]:border-collapse [&_table]:my-4 [&_td]:border [&_td]:border-slate-300 [&_td]:p-2 [&_th]:border [&_th]:border-slate-300 [&_th]:p-2 [&_th]:bg-slate-100 [&_p]:mb-3 [&_p]:leading-relaxed [&_h1]:text-2xl [&_h1]:font-bold [&_h1]:mb-4 [&_h2]:text-xl [&_h2]:font-bold [&_h2]:mb-3 [&_h3]:text-lg [&_h3]:font-bold [&_h3]:mb-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:mb-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:mb-3"
+      dangerouslySetInnerHTML={{ __html: html || '' }}
+    />
+  );
+}
+
+// ─── Code / Text Preview ────────────────────────────────────────────────────
+function CodeTextPreview({ url, name }) {
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(false);
+  const [copied, setCopied]   = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -265,7 +341,7 @@ function TextPreview({ url }) {
         const res = await fetch(url);
         if (!res.ok) throw new Error('fetch failed');
         let text = await res.text();
-        if (text.length > 100_000) text = text.slice(0, 100_000) + '\n\n[... nội dung bị cắt bớt]';
+        if (text.length > 150_000) text = text.slice(0, 150_000) + '\n\n[... nội dung bị cắt bớt do quá dài]';
         if (!cancelled) setContent(text);
       } catch {
         if (!cancelled) setError(true);
@@ -276,35 +352,79 @@ function TextPreview({ url }) {
     return () => { cancelled = true; };
   }, [url]);
 
+  const handleCopy = () => {
+    if (content) {
+      navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-40 text-white/40 text-sm gap-2">
-        <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+      <div className="flex flex-col items-center justify-center gap-3 h-64 text-white/40">
+        <svg className="w-8 h-8 animate-spin text-indigo-400" fill="none" viewBox="0 0 24 24">
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4Z" />
         </svg>
-        Đang tải nội dung…
+        <span className="text-sm font-medium">Đang tải nội dung văn bản / mã nguồn…</span>
       </div>
     );
   }
+
   if (error) {
-    return <div className="text-white/30 text-sm text-center h-40 flex items-center justify-center">Không thể đọc nội dung. Vui lòng tải xuống để xem.</div>;
+    return (
+      <div className="text-white/30 text-sm text-center h-40 flex items-center justify-center">
+        Không thể đọc nội dung. Vui lòng tải xuống để xem.
+      </div>
+    );
   }
+
+  const ext = (name || '').split('.').pop()?.toLowerCase();
+  const langMap = {
+    js: 'javascript', jsx: 'jsx', ts: 'typescript', tsx: 'tsx',
+    py: 'python', json: 'json', html: 'html', css: 'css',
+    sql: 'sql', md: 'markdown', sh: 'bash', bash: 'bash',
+    java: 'java', go: 'go', rs: 'rust', c: 'c', cpp: 'cpp',
+    cs: 'csharp', php: 'php', xml: 'xml', yaml: 'yaml', yml: 'yaml',
+    env: 'bash', txt: 'text'
+  };
+  const language = langMap[ext] || 'text';
+
   return (
-    <pre className="text-sm text-white/80 bg-white/[0.03] border border-white/8 rounded-xl p-5 overflow-auto max-h-[60vh] font-mono leading-relaxed whitespace-pre-wrap break-words">
-      {content}
-    </pre>
+    <div className="w-full max-w-5xl mx-auto rounded-xl overflow-hidden border border-white/10 bg-[#0d1117] flex flex-col text-left">
+      <div className="flex items-center justify-between px-4 py-2 bg-slate-900 border-b border-white/10 text-xs text-white/60">
+        <span className="font-mono text-white/80">{name}</span>
+        <button
+          onClick={handleCopy}
+          className="px-2.5 py-1 rounded-md bg-white/10 hover:bg-white/20 text-xs text-white transition-colors cursor-pointer"
+        >
+          {copied ? '✓ Đã sao chép' : 'Sao chép mã'}
+        </button>
+      </div>
+      <div className="overflow-auto max-h-[60vh] text-xs font-mono">
+        <SyntaxHighlighter
+          language={language}
+          style={vscDarkPlus}
+          showLineNumbers={true}
+          customStyle={{ margin: 0, padding: '1rem', background: 'transparent' }}
+          wrapLines={true}
+        >
+          {content}
+        </SyntaxHighlighter>
+      </div>
+    </div>
   );
 }
 
-// ─── Preview Area (dispatch theo MIME) ───────────────────────────────────────
+// ─── Preview Area (dispatch theo MIME cho file đơn gốc) ───────────────────────
 function PreviewArea({ file, previewUrl, loadingPreview }) {
   const { mimeType, name } = file;
 
   if (loadingPreview) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 h-64 text-white/40">
-        <svg className="w-8 h-8 animate-spin" fill="none" viewBox="0 0 24 24">
+        <svg className="w-8 h-8 animate-spin text-indigo-400" fill="none" viewBox="0 0 24 24">
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4Z" />
         </svg>
@@ -325,29 +445,32 @@ function PreviewArea({ file, previewUrl, loadingPreview }) {
     );
   }
 
-  if (PREVIEW_IMAGE(mimeType)) {
+  if (PREVIEW_IMAGE(mimeType, name)) {
     return <img src={previewUrl} alt={name} className="max-h-[70vh] max-w-full object-contain rounded-xl mx-auto block" loading="lazy" />;
   }
-  if (PREVIEW_VIDEO(mimeType)) {
+  if (PREVIEW_VIDEO(mimeType, name)) {
     return <video controls className="max-h-[70vh] w-full rounded-xl bg-black" preload="metadata" src={previewUrl} />;
   }
-  if (PREVIEW_AUDIO(mimeType)) {
+  if (PREVIEW_AUDIO(mimeType, name)) {
     return (
       <div className="flex flex-col items-center gap-6 py-10">
         <svg className="w-14 h-14 text-pink-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="m9 9 10.5-3m0 6.553v3.75a2.25 2.25 0 0 1-1.632 2.163l-1.32.377a1.803 1.803 0 1 1-.99-3.467l2.31-.66a2.25 2.25 0 0 0 1.632-2.163Zm0 0V2.25L9 5.25v10.303m0 0v3.75a2.25 2.25 0 0 1-1.632 2.163l-1.32.377a1.803 1.803 0 0 1-.99-3.467l2.31-.66A2.25 2.25 0 0 0 9 15.553Z" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="m9 9 10.5-3m0 6.553v3.75a2.25 2.25 0 0 1-1.632 2.163l-1.32.377a1.803 1.803 0 1 1-.99-3.467l2.31-.66a2.25 2.25 0 0 0 1.632-2.163Zm0 0V2.25L9 5.25v10.303m0 0v3.75a2.25 2.25 0 0 1-1.632 2.163l-1.32.377a1.803 1.803 0 1 1-.99-3.467l2.31-.66A2.25 2.25 0 0 0 9 15.553Z" />
         </svg>
         <audio controls className="w-full max-w-md" src={previewUrl} />
       </div>
     );
   }
-  if (PREVIEW_PDF(mimeType)) {
-    // Canvas viewer — không dùng iframe để tránh browser popup tải file
+  if (PREVIEW_PDF(mimeType, name)) {
     return <PdfCanvasViewer url={previewUrl} />;
   }
-  if (PREVIEW_TEXT(mimeType, name)) {
-    return <TextPreview url={previewUrl} />;
+  if (PREVIEW_DOCX(mimeType, name)) {
+    return <DocxPreview url={previewUrl} />;
   }
+  if (PREVIEW_TEXT(mimeType, name)) {
+    return <CodeTextPreview url={previewUrl} name={name} />;
+  }
+
   // Fallback
   return (
     <div className="flex flex-col items-center justify-center gap-4 py-16 text-white/30">
@@ -355,6 +478,297 @@ function PreviewArea({ file, previewUrl, loadingPreview }) {
         <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25M9 16.5v.75m3-3v3M15 12v5.25m-4.5-15H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
       </svg>
       <span className="text-sm">Không hỗ trợ xem trước định dạng này</span>
+    </div>
+  );
+}
+
+// ─── Modal Xem Trước File Con trong Thư Mục Được Chia Sẻ ─────────────────────
+function ChildFilePreviewModal({
+  file,
+  previewUrl,
+  loading,
+  error,
+  isDownloadAllowed,
+  onDownload,
+  onClose,
+}) {
+  const [zoom, setZoom] = useState(1);
+  const [rotation, setRotation] = useState(0);
+  const [downloading, setDownloading] = useState(false);
+
+  useEffect(() => {
+    setZoom(1);
+    setRotation(0);
+  }, [file]);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose && onClose();
+      if (e.key === '=' || e.key === '+') setZoom((z) => Math.min(3, z + 0.25));
+      if (e.key === '-') setZoom((z) => Math.max(0.5, z - 0.25));
+      if (e.key === 'r' || e.key === 'R') setRotation((r) => (r + 90) % 360);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  if (!file) return null;
+
+  const mime = file.mimeType || '';
+  const name = file.name || '';
+  const isImg = PREVIEW_IMAGE(mime, name);
+  const isVid = PREVIEW_VIDEO(mime, name);
+  const isAud = PREVIEW_AUDIO(mime, name);
+  const isPdf = PREVIEW_PDF(mime, name);
+  const isDoc = PREVIEW_DOCX(mime, name);
+  const isTxt = PREVIEW_TEXT(mime, name);
+
+  const handleDownloadClick = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      await onDownload(file);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex flex-col bg-slate-950/90 backdrop-blur-xl animate-in fade-in duration-200 text-white select-none"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      {/* Top Header & Controls */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-slate-900/80 backdrop-blur-md">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center border border-indigo-500/30 shrink-0">
+            <span className={`shrink-0 ${mimeColor(file.mimeType, file.type, file.name)}`}>
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+              </svg>
+            </span>
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-white truncate max-w-md" title={file.name}>
+              {file.name}
+            </h3>
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <span>{formatBytes(file.sizeBytes)}</span>
+              {file.mimeType && (
+                <>
+                  <span>•</span>
+                  <span className="uppercase text-[11px] font-mono">{file.mimeType.split('/').pop()?.split(';')[0]}</span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Toolbar Controls */}
+        <div className="flex items-center gap-2">
+          {(isImg || isPdf) && previewUrl && (
+            <>
+              <button
+                onClick={() => setZoom((z) => Math.max(0.5, z - 0.25))}
+                disabled={zoom <= 0.5}
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 disabled:opacity-30 text-white transition-all cursor-pointer"
+                title="Thu nhỏ (-)"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607ZM13.5 10.5h-6" />
+                </svg>
+              </button>
+              <span className="text-xs font-mono px-2 py-1 bg-white/10 rounded-lg text-slate-300 min-w-[50px] text-center">
+                {Math.round(zoom * 100)}%
+              </span>
+              <button
+                onClick={() => setZoom((z) => Math.min(3, z + 0.25))}
+                disabled={zoom >= 3}
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 disabled:opacity-30 text-white transition-all cursor-pointer"
+                title="Phóng to (+)"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607ZM10.5 7.5v6m3-3h-6" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setRotation((r) => (r + 90) % 360)}
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-all cursor-pointer"
+                title="Xoay 90 độ (R)"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+                </svg>
+              </button>
+              <div className="w-px h-5 bg-white/10 mx-1" />
+            </>
+          )}
+
+          {isDownloadAllowed && (
+            <button
+              onClick={handleDownloadClick}
+              disabled={downloading}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-lg shadow-indigo-500/20 transition-all cursor-pointer disabled:opacity-60"
+            >
+              {downloading ? (
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4Z" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+              )}
+              <span>{downloading ? 'Đang tải…' : 'Tải xuống'}</span>
+            </button>
+          )}
+
+          <button
+            onClick={onClose}
+            className="p-2 rounded-xl bg-white/10 hover:bg-rose-500/80 text-white transition-all ml-2 cursor-pointer"
+            title="Đóng (Esc)"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {/* Main Container */}
+      <div className="flex-1 flex items-center justify-center overflow-hidden p-6 relative">
+        {loading && (
+          <div className="flex flex-col items-center gap-3 text-slate-400">
+            <svg className="w-10 h-10 animate-spin text-indigo-500" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4Z" />
+            </svg>
+            <p className="text-sm font-medium">Đang tải bản xem trước...</p>
+          </div>
+        )}
+
+        {error && !loading && (
+          <div className="max-w-md p-6 bg-red-500/10 border border-red-500/30 rounded-2xl text-center space-y-3">
+            <p className="text-sm text-red-300 font-medium">{error}</p>
+            {isDownloadAllowed && (
+              <button
+                onClick={handleDownloadClick}
+                className="px-4 py-2 bg-white/10 hover:bg-white/20 text-xs font-semibold rounded-xl text-white transition-all cursor-pointer"
+              >
+                Tải tệp về máy để xem
+              </button>
+            )}
+          </div>
+        )}
+
+        {!loading && !error && previewUrl && (
+          <>
+            {isImg && (
+              <div className="w-full h-full flex items-center justify-center overflow-auto p-4 cursor-grab active:cursor-grabbing">
+                <img
+                  src={previewUrl}
+                  alt={file.name}
+                  style={{
+                    transform: `scale(${zoom}) rotate(${rotation}deg)`,
+                    transition: 'transform 0.15s ease-out',
+                  }}
+                  className="max-w-full max-h-full object-contain rounded-xl shadow-2xl border border-white/10"
+                />
+              </div>
+            )}
+
+            {isVid && (
+              <div className="max-w-4xl max-h-full w-full rounded-2xl overflow-hidden bg-black shadow-2xl border border-white/10 relative group flex flex-col items-center justify-center">
+                <video src={previewUrl} controls playsInline className="w-full max-h-[75vh] object-contain" />
+              </div>
+            )}
+
+            {isAud && (
+              <div className="p-8 bg-slate-900 border border-white/10 rounded-3xl shadow-2xl flex flex-col items-center gap-6 text-center max-w-md w-full">
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-pink-500/30 to-purple-500/20 text-pink-400 flex items-center justify-center border border-pink-500/30 shadow-inner">
+                  <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m9 9 10.5-3m0 6.553v3.75a2.25 2.25 0 0 1-1.632 2.163l-1.32.377a1.803 1.803 0 1 1-.99-3.467l2.31-.66a2.25 2.25 0 0 0 1.632-2.163Zm0 0V2.25L9 5.25v10.303m0 0v3.75a2.25 2.25 0 0 1-1.632 2.163l-1.32.377a1.803 1.803 0 1 1-.99-3.467l2.31-.66A2.25 2.25 0 0 0 9 15.553Z" />
+                  </svg>
+                </div>
+                <div className="space-y-1 max-w-full">
+                  <h4 className="font-bold text-white text-base truncate px-2" title={file.name}>
+                    {file.name}
+                  </h4>
+                  <p className="text-xs text-slate-400">Âm thanh • {formatBytes(file.sizeBytes)}</p>
+                </div>
+                <div className="w-full bg-slate-950/60 p-3 rounded-2xl border border-white/5">
+                  <audio src={previewUrl} controls className="w-full" />
+                </div>
+              </div>
+            )}
+
+            {isPdf && (
+              <div className="w-full h-full max-w-5xl rounded-2xl overflow-hidden bg-slate-900/80 border border-white/10 shadow-2xl flex flex-col items-center justify-center">
+                <PdfCanvasViewer url={previewUrl} zoom={zoom} rotation={rotation} />
+              </div>
+            )}
+
+            {isDoc && (
+              <DocxPreview url={previewUrl} />
+            )}
+
+            {isTxt && (
+              <CodeTextPreview url={previewUrl} name={file.name} />
+            )}
+
+            {!isImg && !isVid && !isAud && !isPdf && !isDoc && !isTxt && (
+              <div className="p-8 bg-slate-900 border border-white/10 rounded-3xl shadow-2xl flex flex-col items-center gap-4 text-center max-w-sm">
+                <svg className="w-16 h-16 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25M9 16.5v.75m3-3v3M15 12v5.25m-4.5-15H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                </svg>
+                <h4 className="font-bold text-white text-sm">{file.name}</h4>
+                <p className="text-xs text-slate-400">Định dạng tệp này không hỗ trợ xem trước trực tiếp.</p>
+                {isDownloadAllowed && (
+                  <button
+                    onClick={handleDownloadClick}
+                    className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold rounded-xl text-white shadow-lg transition-all cursor-pointer"
+                  >
+                    Tải xuống tệp gốc
+                  </button>
+                )}
+              </div>
+            )}
+          </>
+        )}
+
+        {!loading && !error && !previewUrl && (
+          <div className="p-8 bg-slate-900 border border-white/10 rounded-3xl shadow-2xl flex flex-col items-center gap-4 text-center max-w-sm">
+            <svg className="w-16 h-16 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25M9 16.5v.75m3-3v3M15 12v5.25m-4.5-15H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+            </svg>
+            <h4 className="font-bold text-white text-sm">{file.name}</h4>
+            <p className="text-xs text-slate-400">Không thể xem trước tệp này.</p>
+            {isDownloadAllowed && (
+              <button
+                onClick={handleDownloadClick}
+                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold rounded-xl text-white shadow-lg transition-all cursor-pointer"
+              >
+                Tải xuống tệp gốc
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Bottom Info Bar */}
+      <div className="px-6 py-3 bg-slate-900/80 border-t border-white/10 flex items-center justify-between text-xs text-slate-400">
+        <div className="flex items-center gap-2">
+          <span>{file.name}</span>
+          <span>•</span>
+          <span>{formatBytes(file.sizeBytes)}</span>
+        </div>
+        <div className="flex items-center gap-4">
+          <span>Phím tắt: ESC (Đóng), +/- (Thu phóng), R (Xoay)</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -405,7 +819,6 @@ function FolderBrowser({ token, rootFolderName, isDownloadAllowed, onOpenFile })
     setZipLoading(true);
     try {
       // Endpoint /download-url với token — khi folder sẽ trả về ZIP stream trực tiếp
-      // Dùng window.open để trigger download mà không cần fetch blob
       window.open(
         `${(import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api/v1')}/shares/${token}/download-url`,
         '_blank',
@@ -440,7 +853,7 @@ function FolderBrowser({ token, rootFolderName, isDownloadAllowed, onOpenFile })
           <button
             onClick={handleDownloadZip}
             disabled={zipLoading}
-            className="shrink-0 flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 disabled:opacity-50 transition-colors whitespace-nowrap"
+            className="shrink-0 flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 disabled:opacity-50 transition-colors whitespace-nowrap cursor-pointer"
           >
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
@@ -488,15 +901,16 @@ function FolderBrowser({ token, rootFolderName, isDownloadAllowed, onOpenFile })
                 }
               }}
               onClick={(e) => {
-                // Single click subfolder → navigate
-                if (item.type === 'folder' && e.detail === 1) {
+                if (item.type === 'folder') {
                   handleOpenFolder(item);
+                } else {
+                  onOpenFile(item);
                 }
               }}
               title={item.type === 'folder' ? `Mở thư mục ${item.name}` : `Xem trước ${item.name}`}
             >
               {/* Icon */}
-              <span className={`shrink-0 ${mimeColor(item.mimeType, item.type)}`}>
+              <span className={`shrink-0 ${mimeColor(item.mimeType, item.type, item.name)}`}>
                 {item.type === 'folder' ? (
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M2.25 6a2.25 2.25 0 0 1 2.25-2.25h3.879a1.5 1.5 0 0 1 1.06.44l2.122 2.12A1.5 1.5 0 0 0 12.62 6.75H19.5A2.25 2.25 0 0 1 21.75 9v9a2.25 2.25 0 0 1-2.25 2.25H4.5A2.25 2.25 0 0 1 2.25 18V6Z" />
@@ -533,8 +947,8 @@ function FolderBrowser({ token, rootFolderName, isDownloadAllowed, onOpenFile })
 }
 
 // ─── File Icon (đơn giản, dùng cho tiêu đề) ──────────────────────────────────
-function FileTypeIcon({ mimeType, type }) {
-  const color = mimeColor(mimeType, type);
+function FileTypeIcon({ mimeType, type, name }) {
+  const color = mimeColor(mimeType, type, name);
   if (type === 'folder') {
     return (
       <svg className={`w-14 h-14 ${color}`} fill="currentColor" viewBox="0 0 24 24">
@@ -562,9 +976,10 @@ export default function SharePage() {
   const [error, setError]                   = useState(null);
 
   // File con được chọn để xem preview (khi đang duyệt folder)
-  const [selectedChild, setSelectedChild]   = useState(null);
-  const [childPreviewUrl, setChildPreviewUrl] = useState(null);
+  const [selectedChild, setSelectedChild]       = useState(null);
+  const [childPreviewUrl, setChildPreviewUrl]   = useState(null);
   const [childPreviewLoading, setChildPreviewLoading] = useState(false);
+  const [childPreviewError, setChildPreviewError] = useState(null);
 
   // ── Bước 1: Lấy metadata share link ──────────────────────────────────────
   useEffect(() => {
@@ -592,9 +1007,9 @@ export default function SharePage() {
 
     const { file } = shareData;
     const canPreview =
-      PREVIEW_IMAGE(file.mimeType) || PREVIEW_VIDEO(file.mimeType) ||
-      PREVIEW_AUDIO(file.mimeType) || PREVIEW_PDF(file.mimeType)   ||
-      PREVIEW_TEXT(file.mimeType, file.name);
+      PREVIEW_IMAGE(file.mimeType, file.name) || PREVIEW_VIDEO(file.mimeType, file.name) ||
+      PREVIEW_AUDIO(file.mimeType, file.name) || PREVIEW_PDF(file.mimeType, file.name)   ||
+      PREVIEW_DOCX(file.mimeType, file.name)  || PREVIEW_TEXT(file.mimeType, file.name);
 
     if (!canPreview) return;
 
@@ -602,22 +1017,28 @@ export default function SharePage() {
     setLoadingPreview(true);
 
     sharingApi.getSharedPreviewUrl(token)
-      .then((res) => { if (!cancelled) setPreviewUrl(res.previewUrl); })
+      .then((res) => {
+        if (!cancelled) {
+          const url = typeof res === 'string' ? res : (res?.previewUrl || res?.url);
+          setPreviewUrl(url);
+        }
+      })
       .catch(() => {}) // Preview không bắt buộc
       .finally(() => { if (!cancelled) setLoadingPreview(false); });
 
     return () => { cancelled = true; };
   }, [shareData, token]);
 
-  // ── Handler: Tải xuống (file) ─────────────────────────────────────────────
+  // ── Handler: Tải xuống (file gốc) ─────────────────────────────────────────
   const handleDownload = useCallback(async () => {
     if (downloadLoading) return;
     setDownloadLoading(true);
     try {
       const res = await sharingApi.getSharedDownloadUrl(token);
-      if (res?.downloadUrl) {
+      const url = typeof res === 'string' ? res : (res?.downloadUrl || res?.url);
+      if (url) {
         const a = document.createElement('a');
-        a.href = res.downloadUrl;
+        a.href = url;
         a.download = shareData?.file?.name || 'driveR_download';
         a.rel = 'noopener noreferrer';
         document.body.appendChild(a);
@@ -633,27 +1054,47 @@ export default function SharePage() {
 
   // ── Handler: Mở preview file con trong folder ─────────────────────────────
   const handleOpenChildFile = useCallback(async (childFile) => {
+    if (!childFile || childFile.type === 'folder') return;
+
     setSelectedChild(childFile);
     setChildPreviewUrl(null);
-
-    const canPreview =
-      PREVIEW_IMAGE(childFile.mimeType) || PREVIEW_VIDEO(childFile.mimeType) ||
-      PREVIEW_AUDIO(childFile.mimeType) || PREVIEW_PDF(childFile.mimeType)   ||
-      PREVIEW_TEXT(childFile.mimeType, childFile.name);
-
-    if (!canPreview) return;
-
+    setChildPreviewError(null);
     setChildPreviewLoading(true);
+
     try {
-      // Dùng presigned preview của file gốc qua owner — không cần expose thêm endpoint
-      // Gọi qua token: GET /shares/:token/preview-url với childId param
-      // Đây là trade-off: dùng lại endpoint preview của share nhưng không hỗ trợ file con.
-      // Fallback: hiện thông báo tải xuống.
-      setChildPreviewUrl(null);
-    } catch {} finally {
+      const res = await sharingApi.getSharedPreviewUrl(token, childFile.id);
+      const url = typeof res === 'string' ? res : (res?.previewUrl || res?.url);
+      if (url) {
+        setChildPreviewUrl(url);
+      } else {
+        setChildPreviewError('Không thể tạo liên kết xem trước cho tệp này.');
+      }
+    } catch (err) {
+      setChildPreviewError(err?.message || 'Lỗi khi tải bản xem trước tệp con.');
+    } finally {
       setChildPreviewLoading(false);
     }
-  }, []);
+  }, [token]);
+
+  // ── Handler: Tải xuống riêng file con trong folder ─────────────────────────
+  const handleDownloadChild = useCallback(async (childFile) => {
+    if (!childFile) return;
+    try {
+      const res = await sharingApi.getSharedDownloadUrl(token, childFile.id);
+      const url = typeof res === 'string' ? res : (res?.downloadUrl || res?.url);
+      if (url) {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = childFile.name || 'driveR_download';
+        a.rel = 'noopener noreferrer';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+    } catch (err) {
+      alert(err?.message || 'Không thể tải xuống tệp tin lúc này.');
+    }
+  }, [token]);
 
   // ── Render: Loading ───────────────────────────────────────────────────────
   if (loadingPage) return <SharePageSkeleton />;
@@ -698,7 +1139,7 @@ export default function SharePage() {
             <button
               onClick={handleDownload}
               disabled={downloadLoading}
-              className="shrink-0 flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-sm font-medium transition-all shadow-lg shadow-indigo-500/25"
+              className="shrink-0 flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-sm font-medium transition-all shadow-lg shadow-indigo-500/25 cursor-pointer"
             >
               {downloadLoading
                 ? <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4Z" /></svg>
@@ -716,7 +1157,7 @@ export default function SharePage() {
         {/* Tiêu đề file */}
         <div className="flex items-start gap-4 mb-8">
           <div className="shrink-0 mt-1">
-            <FileTypeIcon mimeType={file.mimeType} type={file.type} />
+            <FileTypeIcon mimeType={file.mimeType} type={file.type} name={file.name} />
           </div>
           <div className="min-w-0">
             <h1 className="text-2xl sm:text-3xl font-semibold break-words leading-tight mb-2" title={file.name}>
@@ -774,7 +1215,7 @@ export default function SharePage() {
                 <button
                   onClick={handleDownload}
                   disabled={downloadLoading}
-                  className="flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 disabled:opacity-50 transition-colors"
+                  className="flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 disabled:opacity-50 transition-colors cursor-pointer"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
@@ -787,6 +1228,23 @@ export default function SharePage() {
               <PreviewArea file={file} previewUrl={previewUrl} loadingPreview={loadingPreview} />
             </div>
           </section>
+        )}
+
+        {/* Modal xem trước file con khi chọn trong bảng */}
+        {selectedChild && (
+          <ChildFilePreviewModal
+            file={selectedChild}
+            previewUrl={childPreviewUrl}
+            loading={childPreviewLoading}
+            error={childPreviewError}
+            isDownloadAllowed={isDownloadAllowed}
+            onDownload={handleDownloadChild}
+            onClose={() => {
+              setSelectedChild(null);
+              setChildPreviewUrl(null);
+              setChildPreviewError(null);
+            }}
+          />
         )}
 
         {/* Footer CTA */}

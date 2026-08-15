@@ -41,16 +41,19 @@ export function FileProvider({ children }) {
   }, [navigate, activeTab]);
 
   const openFolder = useCallback((folder) => {
+    setCurrentPage(1);
     if (!folder || !folder.id) {
-      navigate('/app/my-drive');
+      navigate(`/app/${activeTab}`);
       return;
     }
     if (folder.sharedDriveId) {
       navigate(`/app/shared-drives/folders/${folder.id}`);
+    } else if (activeTab === 'shared-with-me') {
+      navigate(`/app/shared-with-me/folders/${folder.id}`);
     } else {
       navigate(`/app/my-drive/folders/${folder.id}`);
     }
-  }, [navigate]);
+  }, [navigate, activeTab]);
 
   const [viewMode, setViewMode] = useState('list');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);

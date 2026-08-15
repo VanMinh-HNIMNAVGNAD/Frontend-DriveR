@@ -1,15 +1,16 @@
-import { useEffect } from 'react';
 import FileListView from '../components/file-manager/FileListView';
 import FileGridView from '../components/file-manager/FileGridView';
 import FileFilterBar from '../components/common/FileFilterBar';
 import { useFiles } from '../context/FileContext';
-import { Users, List, LayoutGrid, Share2 } from 'lucide-react';
+import { Users, List, LayoutGrid, Share2, ChevronRight } from 'lucide-react';
 
 export default function SharedWithMePage() {
     const {
         viewMode,
         setViewMode,
-        activeTab,
+        currentFolderId,
+        breadcrumb,
+        openFolder,
         filterType,
         setFilterType,
         filterDate,
@@ -23,41 +24,52 @@ export default function SharedWithMePage() {
         error,
     } = useFiles();
 
-    // Trang này luôn active tab 'shared-with-me' — context tự detect từ route
-    // Không cần gọi setActiveTab vì context derive từ location.pathname
-
     return (
         <div className="flex flex-col h-full">
-            {/* Page Header */}
-            <div className="flex items-center justify-between mb-3 pb-3 border-b border-gray-100 dark:border-gray-700/60">
-                <div className="flex items-center gap-2.5">
-                    <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-500/10">
-                        <Users className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-                    </div>
-                    <div>
-                        <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100 leading-tight">
-                            Được chia sẻ với tôi
-                        </h1>
-                        {!isLoading && (
-                            <p className="text-xs text-gray-500 dark:text-gray-400">
-                                {items.length > 0
-                                    ? `${items.length} mục được chia sẻ`
-                                    : 'Chưa có mục nào được chia sẻ'}
-                            </p>
-                        )}
-                    </div>
+            {/* Header */}
+            <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-100">
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <Users className="w-6 h-6 text-blue-600 shrink-0" />
+                    {currentFolderId ? (
+                        <nav className="flex items-center gap-1.5 text-sm text-gray-600 font-medium overflow-x-auto py-1">
+                            <button
+                                onClick={() => openFolder({ id: null })}
+                                className="hover:text-blue-600 transition-colors shrink-0 text-xl font-bold text-gray-800 cursor-pointer"
+                            >
+                                Được chia sẻ với tôi
+                            </button>
+                            {breadcrumb
+                                .filter((b) => b.id !== null)
+                                .map((item, index, arr) => (
+                                    <div key={item.id || index} className="flex items-center gap-1 shrink-0">
+                                        <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />
+                                        <button
+                                            onClick={() => openFolder({ id: item.id })}
+                                            className={`hover:text-blue-600 transition-colors cursor-pointer text-xl ${
+                                                index === arr.length - 1
+                                                    ? 'font-bold text-gray-900'
+                                                    : 'text-gray-600 font-semibold'
+                                            }`}
+                                        >
+                                            {item.name}
+                                        </button>
+                                    </div>
+                                ))}
+                        </nav>
+                    ) : (
+                        <h1 className="text-xl font-bold text-gray-800">Được chia sẻ với tôi</h1>
+                    )}
                 </div>
 
-                {/* View Mode Toggle */}
-                <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-full p-1 border border-gray-200 dark:border-gray-700 gap-0.5">
+                {/* View Switcher */}
+                <div className="flex items-center bg-gray-100 rounded-full p-1 border border-gray-200 shrink-0">
                     <button
                         onClick={() => setViewMode('list')}
                         title="Xem dạng danh sách"
-                        aria-label="List view"
-                        className={`p-1.5 rounded-full transition-all ${
+                        className={`p-1.5 rounded-full transition-colors ${
                             viewMode === 'list'
-                                ? 'bg-white dark:bg-gray-700 shadow-sm text-blue-600 dark:text-blue-400'
-                                : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+                                ? 'bg-white shadow-xs text-blue-600 font-medium'
+                                : 'text-gray-500 hover:text-gray-800'
                         }`}
                     >
                         <List className="w-4 h-4" />
@@ -65,11 +77,10 @@ export default function SharedWithMePage() {
                     <button
                         onClick={() => setViewMode('grid')}
                         title="Xem dạng lưới"
-                        aria-label="Grid view"
-                        className={`p-1.5 rounded-full transition-all ${
+                        className={`p-1.5 rounded-full transition-colors ${
                             viewMode === 'grid'
-                                ? 'bg-white dark:bg-gray-700 shadow-sm text-blue-600 dark:text-blue-400'
-                                : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+                                ? 'bg-white shadow-xs text-blue-600 font-medium'
+                                : 'text-gray-500 hover:text-gray-800'
                         }`}
                     >
                         <LayoutGrid className="w-4 h-4" />
@@ -91,7 +102,7 @@ export default function SharedWithMePage() {
 
             {/* Error state */}
             {error && (
-                <div className="mt-4 p-3 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 text-red-700 dark:text-red-300 text-sm">
+                <div className="mt-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">
                     {error}
                 </div>
             )}
@@ -99,15 +110,17 @@ export default function SharedWithMePage() {
             {/* Empty state when not loading and no items */}
             {!isLoading && !error && items.length === 0 && (
                 <div className="flex-1 flex flex-col items-center justify-center gap-4 py-16">
-                    <div className="p-5 rounded-2xl bg-gray-100 dark:bg-gray-800">
-                        <Share2 className="w-12 h-12 text-gray-400 dark:text-gray-500" />
+                    <div className="p-5 rounded-2xl bg-gray-100">
+                        <Share2 className="w-12 h-12 text-gray-400" />
                     </div>
                     <div className="text-center">
-                        <p className="text-base font-semibold text-gray-700 dark:text-gray-300">
-                            Chưa có mục nào được chia sẻ với bạn
+                        <p className="text-base font-semibold text-gray-700">
+                            {currentFolderId ? 'Thư mục này trống' : 'Chưa có mục nào được chia sẻ với bạn'}
                         </p>
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                            Khi ai đó chia sẻ tệp hoặc thư mục với bạn, chúng sẽ xuất hiện ở đây.
+                        <p className="text-sm text-gray-500 mt-1">
+                            {currentFolderId
+                                ? 'Không có tệp hoặc thư mục nào bên trong thư mục này.'
+                                : 'Khi ai đó chia sẻ tệp hoặc thư mục với bạn, chúng sẽ xuất hiện ở đây.'}
                         </p>
                     </div>
                 </div>
