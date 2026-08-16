@@ -17,6 +17,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { useFiles } from '../../context/FileContext';
+import { storageApi } from '../../services/api';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { marked } from 'marked';
@@ -30,6 +31,23 @@ if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
     import.meta.url
   ).toString();
 }
+
+const isMarkdownFile = (fileName = '') => {
+  const lower = fileName.toLowerCase();
+  return lower.endsWith('.md') || lower.endsWith('.markdown');
+};
+
+const isTextLikeFile = (fileName = '', mimeType = '') => {
+  const lower = fileName.toLowerCase();
+  const mime = (mimeType || '').toLowerCase();
+
+  return (
+    isMarkdownFile(fileName) ||
+    mime === 'text/markdown' ||
+    mime.startsWith('text/') ||
+    /\.(txt|md|markdown|log|env|conf|ini|csv|json|xml|yaml|yml|js|jsx|ts|tsx|py|html|css|sql|sh|c|cpp|h|hpp|java|go|rs|kt|php|vue|svelte|cs)$/i.test(lower)
+  );
+};
 
 /**
  * Component Canvas chuyên dụng xem PDF nhiều trang, hỗ trợ High-DPI
@@ -190,7 +208,7 @@ function PdfCanvasViewer({ url, zoom = 1, rotation = 0 }) {
 }
 
 export default function FilePreviewModal({ item, onClose }) {
-  const { getPreviewUrl, getDownloadUrl, getFileTextContent } = useFiles();
+  const { getPreviewUrl, getFileTextContent } = useFiles();
   const [url, setUrl] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -205,6 +223,14 @@ export default function FilePreviewModal({ item, onClose }) {
     setError(null);
     setZoom(1);
     setRotation(0);
+
+    if (isTextLikeFile(item.name, item.mimeType)) {
+      setUrl(null);
+      setLoading(false);
+      return () => {
+        isMounted = false;
+      };
+    }
 
     const fetchUrl = async () => {
       try {
@@ -246,8 +272,6 @@ export default function FilePreviewModal({ item, onClose }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  if (!item) return null;
-
   const handleZoomIn = () => setZoom((prev) => Math.min(prev + 0.25, 3));
   const handleZoomOut = () => setZoom((prev) => Math.max(prev - 0.25, 0.5));
   const handleRotate = () => setRotation((prev) => (prev + 90) % 360);
@@ -257,10 +281,29 @@ export default function FilePreviewModal({ item, onClose }) {
   };
 
   const handleDownload = async () => {
-    const downloadUrl = await getDownloadUrl(item.id);
-    if (downloadUrl) {
+    if (isTextLikeFile(item.name, item.mimeType)) {
+      const textResponse = await storageApi.getFileTextContent(item.id).catch(() => null);
+      const fallbackContent = textResponse?.content ?? textResponse ?? textContent;
+      if (typeof fallbackContent === 'string' && fallbackContent.length > 0) {
+        const blob = new Blob([fallbackContent], { type: item.mimeType || 'text/plain;charset=utf-8' });
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = item.name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 0);
+      }
+      return;
+    }
+
+    const downloadUrl = await storageApi.getDownloadUrl(item.id).catch(() => null);
+    const resolvedUrl = typeof downloadUrl === 'string' ? downloadUrl : downloadUrl?.downloadUrl;
+
+    if (resolvedUrl) {
       const a = document.createElement('a');
-      a.href = typeof downloadUrl === 'string' ? downloadUrl : downloadUrl?.downloadUrl;
+      a.href = resolvedUrl;
       a.download = item.name;
       document.body.appendChild(a);
       a.click();
@@ -268,22 +311,23 @@ export default function FilePreviewModal({ item, onClose }) {
     }
   };
 
-  const mime = (item.mimeType || '').toLowerCase();
-  const isImage = mime.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico)$/i.test(item.name);
-  const isVideo = mime.startsWith('video/') || /\.(mp4|webm|mov|mkv)$/i.test(item.name);
-  const isAudio = mime.startsWith('audio/') || /\.(mp3|wav|ogg|m4a)$/i.test(item.name);
-  const isPdf = mime.includes('pdf') || /\.pdf$/i.test(item.name);
-  const isMd = /\.(md|markdown)$/i.test(item.name) || mime === 'text/markdown';
-  const isCodeOrText = (isMd || mime.startsWith('text/') || /\.(js|jsx|ts|tsx|py|html|css|json|sql|txt|xml|yaml|yml|sh|env|conf|log|c|cpp|h|hpp|java|go|rs|kt|php|vue|svelte|cs)$/i.test(item.name)) && Number(item.sizeBytes) <= 5 * 1024 * 1024;
-  const isDocx = (
-    mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-    mime === 'application/msword' ||
-    /\.docx$/i.test(item.name)
-  ) && Number(item.sizeBytes) <= 8 * 1024 * 1024;
+  const mime = (item?.mimeType || '').toLowerCase();
+  const name = item?.name || '';
+  const isImage = mime.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|svg|bmp|ico)$/i.test(name);
+  const isVideo = mime.startsWith('video/') || /\.(mp4|webm|mov|mkv)$/i.test(name);
+  const isAudio = mime.startsWith('audio/') || /\.(mp3|wav|ogg|m4a)$/i.test(name);
+  const isPdf = mime.includes('pdf') || /\.pdf$/i.test(name);
+  const isMd = isMarkdownFile(name) || mime === 'text/markdown';
+  const isCodeOrText = item ? isTextLikeFile(name, item.mimeType) && Number(item.sizeBytes) <= 5 * 1024 * 1024 : false;
+  const isDocx = item ? (
+    (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      mime === 'application/msword' ||
+      /\.docx$/i.test(name)) && Number(item.sizeBytes) <= 8 * 1024 * 1024
+  ) : false;
 
   const [copied, setCopied] = useState(false);
   const [textContent, setTextContent] = useState(null);
-  const [textLoading, setTextLoading] = useState(false);
+  const [isLoadingText, setIsLoadingText] = useState(false);
   const [mdViewMode, setMdViewMode] = useState('preview'); // 'preview' | 'source'
 
   const handleCopyText = () => {
@@ -297,7 +341,7 @@ export default function FilePreviewModal({ item, onClose }) {
   useEffect(() => {
     if (isCodeOrText && item) {
       let isMounted = true;
-      setTextLoading(true);
+      setIsLoadingText(true);
       setTextContent(null);
       setMdViewMode('preview');
 
@@ -307,41 +351,22 @@ export default function FilePreviewModal({ item, onClose }) {
           const content = text?.content !== undefined ? text.content : (typeof text === 'string' ? text : '');
           if (content && !content.startsWith('// Không thể tải trực tiếp') && !content.startsWith('// Lỗi khi đọc')) {
             setTextContent(content);
-          } else if (url) {
-            fetch(url)
-              .then((r) => (r.ok ? r.text() : Promise.reject()))
-              .then((fetched) => {
-                if (isMounted) setTextContent(fetched);
-              })
-              .catch(() => {
-                if (isMounted) setTextContent(content || 'Không thể tải nội dung tệp');
-              });
           } else {
             setTextContent(content || 'Không thể tải nội dung tệp');
           }
         })
-        .catch(async () => {
-          if (url) {
-            try {
-              const res = await fetch(url);
-              if (res.ok) {
-                const text = await res.text();
-                if (isMounted) setTextContent(text);
-                return;
-              }
-            } catch {}
-          }
+        .catch(() => {
           if (isMounted) setTextContent('Không thể tải nội dung tệp văn bản / mã nguồn');
         })
         .finally(() => {
-          if (isMounted) setTextLoading(false);
+          if (isMounted) setIsLoadingText(false);
         });
 
       return () => {
         isMounted = false;
       };
     }
-  }, [isCodeOrText, item, url]);
+  }, [isCodeOrText, item]);
 
   const [docxHtml, setDocxHtml] = useState(null);
   const [docxLoading, setDocxLoading] = useState(false);
@@ -380,6 +405,8 @@ export default function FilePreviewModal({ item, onClose }) {
       isMounted = false;
     };
   }, [isDocx, url]);
+
+  if (!item) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-slate-950/90 backdrop-blur-xl animate-in fade-in duration-200 text-white select-none">
@@ -481,7 +508,7 @@ export default function FilePreviewModal({ item, onClose }) {
           </div>
         )}
 
-        {!loading && !error && url && (
+        {!loading && !error && (url || isCodeOrText) && (
           <>
             {isImage && (
               <div className="w-full h-full flex items-center justify-center overflow-auto p-4 cursor-grab active:cursor-grabbing">
@@ -639,7 +666,7 @@ export default function FilePreviewModal({ item, onClose }) {
                   </div>
                 </div>
                 <div className="flex-1 overflow-auto text-xs text-slate-200 selection:bg-blue-500/40">
-                  {textLoading ? (
+                  {isLoadingText ? (
                     <div className="flex flex-col items-center justify-center gap-3 text-slate-400 py-20">
                       <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
                       <p className="text-sm font-medium">Đang tải nội dung...</p>

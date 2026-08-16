@@ -103,21 +103,25 @@ export function FileProvider({ children }) {
   const itemsRef = useRef(items);
   itemsRef.current = items;
 
+  // Ref tracking latest fetch request ID to prevent race conditions on concurrent fetches
+  const fetchRequestIdRef = useRef(0);
+
   // Storage Analytics State
   const [analytics, setAnalytics] = useState(null);
 
   // Preview modal state
   const [previewItem, setPreviewItem] = useState(null);
 
-  const openPreview = (item) => {
+  const openPreview = useCallback((item) => {
     if (item && !item.isFolder && item.type !== 'folder') {
       setPreviewItem(item);
     }
-  };
+  }, []);
 
-  const closePreview = () => {
+  const closePreview = useCallback(() => {
     setPreviewItem(null);
-  };
+  }, []);
+
   // Info drawer state
   const [infoDrawerItem, setInfoDrawerItem] = useState(null);
   const [isInfoDrawerOpen, setIsInfoDrawerOpen] = useState(false);
@@ -161,15 +165,15 @@ export function FileProvider({ children }) {
     try { localStorage.removeItem(getChunkStateKey(jobId)); } catch { /* ignore */ }
   };
 
-  const openInfoDrawer = (item, tab = 'details') => {
+  const openInfoDrawer = useCallback((item, tab = 'details') => {
     setInfoDrawerItem(item);
     setInfoDrawerTab(tab);
     setIsInfoDrawerOpen(true);
-  };
+  }, []);
 
-  const closeInfoDrawer = () => {
+  const closeInfoDrawer = useCallback(() => {
     setIsInfoDrawerOpen(false);
-  };
+  }, []);
 
   const VALID_FILE_TABS = ['my-drive', 'starred', 'trash', 'spam', 'recent', 'shared-with-me', 'shared-drives'];
 
@@ -185,68 +189,93 @@ export function FileProvider({ children }) {
   }, [isAuthenticated, isAuthLoading]);
 
   // Fetch Files and Folders from Backend API
-  const fetchFiles = useCallback(async () => {
-    // Chờ cho đến khi AuthContext đã resolve xong mới fetch
-    if (isAuthLoading || !isAuthenticated) return;
-    if (!VALID_FILE_TABS.includes(activeTab)) return; // Home/Billing không cần danh sách file
-    try {
+  const fetchFiles = useCallback(
+    async (retries = 1) => {
+      // Chờ cho đến khi AuthContext đã resolve xong mới fetch
+      if (isAuthLoading || !isAuthenticated) return;
+      if (!VALID_FILE_TABS.includes(activeTab)) return; // Home/Billing không cần danh sách file
+
+      const requestId = ++fetchRequestIdRef.current;
       setIsLoading(true);
       setError(null);
 
-      const response = await filesApi.getFilesAndFolders({
-        tab: activeTab,
-        folderId: currentFolderId || undefined,
-        search: debouncedSearch || undefined,
-        filterType: filterType !== 'all' ? filterType : undefined,
-        filterDate: filterDate !== 'all' ? filterDate : undefined,
-        filterSender: filterOwner !== 'all' ? filterOwner : undefined,
-        page: currentPage,
-        limit: pageSize,
-      });
+      const doFetch = async (remainingRetries) => {
+        try {
+          const response = await filesApi.getFilesAndFolders({
+            tab: activeTab,
+            folderId: currentFolderId || undefined,
+            search: debouncedSearch || undefined,
+            filterType: filterType !== 'all' ? filterType : undefined,
+            filterDate: filterDate !== 'all' ? filterDate : undefined,
+            filterSender: filterOwner !== 'all' ? filterOwner : undefined,
+            page: currentPage,
+            limit: pageSize,
+          });
 
-      const rawItems = response.items || [];
-      const formattedItems = rawItems.map((item) => {
-        const base = {
-          ...item,
-          size: Number(item.sizeBytes || 0),
-          createdAt: item.createdAt ? new Date(item.createdAt).toLocaleString('vi-VN') : '',
-          updatedAt: item.updatedAt ? new Date(item.updatedAt).toLocaleString('vi-VN') : '',
-        };
+          // Nếu có request mới hơn đã được phát đi, bỏ qua kết quả cũ tránh race condition
+          if (requestId !== fetchRequestIdRef.current) return;
 
-        if (activeTab === 'shared-with-me') {
-          return {
-            ...base,
-            owner: item.sharedOwner?.fullName || 'Người dùng khác',
-            sharedOwner: item.sharedOwner || null,
-            sharedRole: item.sharedRole || 'VIEWER',
-            sharedAt: item.sharedAt
-              ? new Date(item.sharedAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
-              : '',
-          };
+          const rawItems = response.items || [];
+          const formattedItems = rawItems.map((item) => {
+            const base = {
+              ...item,
+              size: Number(item.sizeBytes || 0),
+              createdAt: item.createdAt ? new Date(item.createdAt).toLocaleString('vi-VN') : '',
+              updatedAt: item.updatedAt ? new Date(item.updatedAt).toLocaleString('vi-VN') : '',
+            };
+
+            if (activeTab === 'shared-with-me') {
+              return {
+                ...base,
+                owner: item.sharedOwner?.fullName || 'Người dùng khác',
+                sharedOwner: item.sharedOwner || null,
+                sharedRole: item.sharedRole || 'VIEWER',
+                sharedAt: item.sharedAt
+                  ? new Date(item.sharedAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                  : '',
+              };
+            }
+
+            return {
+              ...base,
+              owner: 'Tôi',
+            };
+          });
+
+          setItems(formattedItems);
+          if (response.meta) {
+            setTotalItems(response.meta.total || formattedItems.length);
+            setTotalPages(response.meta.totalPages || 1);
+          }
+          if (response.breadcrumb) {
+            setBreadcrumb(response.breadcrumb);
+          }
+          setError(null);
+        } catch (err) {
+          if (requestId !== fetchRequestIdRef.current) return;
+
+          if (remainingRetries > 0) {
+            console.warn(`Lỗi khi lấy danh sách file, đang thử lại sau 1s (còn ${remainingRetries} lần thử):`, err);
+            setError('Danh sách có thể chưa cập nhật, đang thử tải lại...');
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            if (requestId !== fetchRequestIdRef.current) return;
+            return await doFetch(remainingRetries - 1);
+          }
+
+          console.error('Lỗi khi lấy danh sách file sau khi thử lại:', err);
+          setError(err.message || 'Không thể tải danh sách tệp');
+          // Giữ lại danh sách items cũ, KHÔNG gọi setItems([]) để tránh làm trắng trang
+        } finally {
+          if (requestId === fetchRequestIdRef.current) {
+            setIsLoading(false);
+          }
         }
+      };
 
-        return {
-          ...base,
-          owner: 'Tôi',
-        };
-      });
-
-      setItems(formattedItems);
-      if (response.meta) {
-        setTotalItems(response.meta.total || formattedItems.length);
-        setTotalPages(response.meta.totalPages || 1);
-      }
-      if (response.breadcrumb) {
-        setBreadcrumb(response.breadcrumb);
-      }
-    } catch (err) {
-      console.error('Lỗi khi lấy danh sách file:', err);
-      setError(err.message || 'Không thể tải danh sách tệp');
-      setItems([]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [isAuthenticated, isAuthLoading, activeTab, currentFolderId, debouncedSearch, filterType, filterDate, filterOwner, currentPage, pageSize]);
+      await doFetch(retries);
+    },
+    [isAuthenticated, isAuthLoading, activeTab, currentFolderId, debouncedSearch, filterType, filterDate, filterOwner, currentPage, pageSize]
+  );
 
   useEffect(() => {
     fetchFiles();
@@ -398,7 +427,7 @@ export function FileProvider({ children }) {
 
 
   // Actions connecting to Backend
-  const toggleStar = async (id) => {
+  const toggleStar = useCallback(async (id) => {
     try {
       await filesApi.toggleStar(id);
       setItems((prev) =>
@@ -407,9 +436,9 @@ export function FileProvider({ children }) {
     } catch (err) {
       alert('Không thể cập nhật dấu sao: ' + err.message);
     }
-  };
+  }, []);
 
-  const moveToTrash = async (id) => {
+  const moveToTrash = useCallback(async (id) => {
     try {
       await filesApi.moveToTrash(id);
       setItems((prev) => prev.filter((item) => item.id !== id));
@@ -417,9 +446,9 @@ export function FileProvider({ children }) {
     } catch (err) {
       alert('Không thể chuyển vào thùng rác: ' + err.message);
     }
-  };
+  }, [fetchAnalytics]);
 
-  const restoreFromTrash = async (id) => {
+  const restoreFromTrash = useCallback(async (id) => {
     try {
       await filesApi.restoreFromTrash(id);
       setItems((prev) => prev.filter((item) => item.id !== id));
@@ -427,9 +456,9 @@ export function FileProvider({ children }) {
     } catch (err) {
       alert('Không thể khôi phục: ' + err.message);
     }
-  };
+  }, [fetchAnalytics]);
 
-  const deletePermanently = async (id) => {
+  const deletePermanently = useCallback(async (id) => {
     try {
       await filesApi.deletePermanently(id);
       setItems((prev) => prev.filter((item) => item.id !== id));
@@ -437,9 +466,9 @@ export function FileProvider({ children }) {
     } catch (err) {
       alert('Không thể xóa vĩnh viễn: ' + err.message);
     }
-  };
+  }, [fetchAnalytics]);
 
-  const emptyTrash = async () => {
+  const emptyTrash = useCallback(async (id) => {
     try {
       await filesApi.emptyTrash();
       setItems([]);
@@ -447,9 +476,9 @@ export function FileProvider({ children }) {
     } catch (err) {
       alert('Không thể dọn thùng rác: ' + err.message);
     }
-  };
+  }, [fetchAnalytics]);
 
-  const renameItem = async (id, newName) => {
+  const renameItem = useCallback(async (id, newName) => {
     if (!newName || !newName.trim()) return;
     try {
       const updated = await filesApi.renameItem(id, { name: newName.trim() });
@@ -459,33 +488,42 @@ export function FileProvider({ children }) {
     } catch (err) {
       alert('Không thể đổi tên: ' + err.message);
     }
-  };
+  }, []);
 
-  const createFolder = async (folderName) => {
+  const createFolder = useCallback(async (folderName) => {
     if (!folderName || !folderName.trim()) return;
+    let res;
+    // 1. Thao tác chính: tạo thư mục ở backend
     try {
       setIsLoading(true);
       const payload = {
         name: folderName.trim(),
         ...(currentFolderId ? { parentId: currentFolderId } : {}),
       };
-      const res = await filesApi.createFolder(payload);
-      await fetchFiles();
-      return res;
+      res = await filesApi.createFolder(payload);
     } catch (err) {
       alert('Không thể tạo thư mục: ' + err.message);
       throw err;
     } finally {
       setIsLoading(false);
     }
-  };
+
+    // 2. Bước đồng bộ lại danh sách (tách riêng, không báo lỗi tạo thư mục nếu fetch lỗi)
+    try {
+      await fetchFiles();
+    } catch (fetchErr) {
+      console.warn('Lỗi đồng bộ danh sách sau khi tạo thư mục:', fetchErr);
+    }
+
+    return res;
+  }, [currentFolderId, fetchFiles]);
 
   /**
    * Tạo folder im lặng (không trigger loading, không gọi fetchFiles).
    * Dùng khi xây cấu trúc thư mục khi upload folder.
    * @returns {Promise<string|null>} ID của folder vừa tạo
    */
-  const createFolderSilent = async (name, parentId) => {
+  const createFolderSilent = useCallback(async (name, parentId) => {
     if (!name || !name.trim()) return null;
     try {
       const payload = {
@@ -499,26 +537,42 @@ export function FileProvider({ children }) {
       console.error(`Tạo folder "${name}" thất bại:`, err);
       return null; // Không throw — để caller tự xử lý fallback
     }
-  };
+  }, []);
 
-  const moveItem = async (id, targetParentId) => {
+  const moveItem = useCallback(async (id, targetParentId) => {
+    // 1. Thao tác chính: di chuyển item ở backend
     try {
       await filesApi.moveItem(id, { targetParentId });
-      fetchFiles();
     } catch (err) {
       alert('Không thể di chuyển: ' + err.message);
+      return;
     }
-  };
 
-  const copyItem = async (id, targetParentId) => {
+    // 2. Bước đồng bộ lại danh sách
+    try {
+      await fetchFiles();
+    } catch (fetchErr) {
+      console.warn('Lỗi đồng bộ danh sách sau khi di chuyển:', fetchErr);
+    }
+  }, [fetchFiles]);
+
+  const copyItem = useCallback(async (id, targetParentId) => {
+    // 1. Thao tác chính: sao chép item ở backend
     try {
       await filesApi.copyItem(id, { targetParentId });
-      fetchFiles();
-      fetchAnalytics();
     } catch (err) {
       alert('Không thể sao chép: ' + err.message);
+      return;
     }
-  };
+
+    // 2. Bước đồng bộ lại danh sách và thông số lưu trữ
+    try {
+      await fetchFiles();
+      await fetchAnalytics();
+    } catch (fetchErr) {
+      console.warn('Lỗi đồng bộ danh sách sau khi sao chép:', fetchErr);
+    }
+  }, [fetchFiles, fetchAnalytics]);
 
   // ── Cut / Copy / Paste Actions (Snapshot-based Clipboard) ──
 
@@ -593,8 +647,9 @@ export function FileProvider({ children }) {
       }
 
       setIsPasting(true);
+      let results;
       try {
-        const results = await Promise.allSettled(
+        results = await Promise.allSettled(
           toProcess.map(async (entry) => {
             if (currentClip.mode === 'cut') {
               return await filesApi.moveItem(entry.id, { targetParentId: destId });
@@ -603,40 +658,47 @@ export function FileProvider({ children }) {
             }
           })
         );
-
-        const rejected = [];
-        let fulfilledCount = 0;
-
-        results.forEach((res, idx) => {
-          if (res.status === 'fulfilled') {
-            fulfilledCount++;
-          } else {
-            rejected.push({
-              name: toProcess[idx].name,
-              reason: res.reason?.message || 'Lỗi không xác định',
-            });
-          }
-        });
-
-        if (rejected.length > 0) {
-          const errorDetails = rejected.map((r) => `• ${r.name}: ${r.reason}`).join('\n');
-          alert(`Có ${rejected.length}/${toProcess.length} mục xử lý thất bại:\n${errorDetails}`);
-        }
-
-        // Đồng bộ lại danh sách tệp & thông số lưu trữ
-        await fetchFiles();
-        await fetchAnalytics();
-
-        // Nếu là cut thì xoá clipboard sau khi paste (kể cả có lỗi một phần)
-        if (currentClip.mode === 'cut') {
-          clearClipboard();
-        }
-        // Nếu là copy: giữ nguyên clipboard để paste nhiều lần
       } catch (err) {
         console.error('Lỗi trong quá trình dán:', err);
         alert('Đã xảy ra lỗi khi dán: ' + (err.message || err));
+        return;
       } finally {
         setIsPasting(false);
+      }
+
+      const rejected = [];
+      let fulfilledCount = 0;
+
+      results.forEach((res, idx) => {
+        if (res.status === 'fulfilled') {
+          fulfilledCount++;
+        } else {
+          rejected.push({
+            name: toProcess[idx].name,
+            reason: res.reason?.message || 'Lỗi không xác định',
+          });
+        }
+      });
+
+      if (rejected.length > 0) {
+        const errorDetails = rejected.map((r) => `• ${r.name}: ${r.reason}`).join('\n');
+        alert(`Có ${rejected.length}/${toProcess.length} mục xử lý thất bại:\n${errorDetails}`);
+      }
+
+      // Nếu là cut thì xoá clipboard sau khi paste (kể cả có lỗi một phần)
+      if (currentClip.mode === 'cut') {
+        clearClipboard();
+      }
+      // Nếu là copy: giữ nguyên clipboard để paste nhiều lần
+
+      // Đồng bộ lại danh sách tệp & thông số lưu trữ (tách riêng khỏi catch dán)
+      if (fulfilledCount > 0) {
+        try {
+          await fetchFiles();
+          await fetchAnalytics();
+        } catch (syncErr) {
+          console.warn('Lỗi đồng bộ danh sách sau khi dán:', syncErr);
+        }
       }
     },
     [clearClipboard, fetchFiles, fetchAnalytics]
@@ -795,8 +857,12 @@ export function FileProvider({ children }) {
           await runChunkedUploadJob(job);
           updateJob(id, { percent: 100, status: 'done' });
           setTimeout(() => removeJob(id), 5000);
-          fetchFiles();
-          fetchAnalytics();
+          try {
+            await fetchFiles();
+            await fetchAnalytics();
+          } catch (syncErr) {
+            console.warn('Lỗi đồng bộ sau khi tải lên file chunked:', syncErr);
+          }
           return;
         }
 
@@ -858,9 +924,13 @@ export function FileProvider({ children }) {
         // Tự xóa job done sau 5 giây
         setTimeout(() => removeJob(id), 5000);
 
-        // Refresh sau khi 1 file xong
-        fetchFiles();
-        fetchAnalytics();
+        // Refresh sau khi 1 file xong (đồng bộ danh sách và dung lượng)
+        try {
+          await fetchFiles();
+          await fetchAnalytics();
+        } catch (syncErr) {
+          console.warn('Lỗi đồng bộ sau khi tải lên file:', syncErr);
+        }
       } catch (err) {
         console.error(`Lỗi upload "${fileObj.name}":`, err);
         updateJob(id, { percent: 0, status: 'error', error: err.message });
@@ -943,7 +1013,7 @@ export function FileProvider({ children }) {
     enqueueUpload(file);
   };
 
-  const getDownloadUrl = async (id) => {
+  const getDownloadUrl = useCallback(async (id) => {
     try {
       const res = await storageApi.getDownloadUrl(id);
       return res.downloadUrl;
@@ -951,9 +1021,9 @@ export function FileProvider({ children }) {
       alert('Lỗi lấy link tải: ' + err.message);
       return null;
     }
-  };
+  }, []);
 
-  const getPreviewUrl = async (id) => {
+  const getPreviewUrl = useCallback(async (id) => {
     try {
       const res = await storageApi.getPreviewUrl(id);
       return res.previewUrl;
@@ -961,9 +1031,9 @@ export function FileProvider({ children }) {
       alert('Lỗi lấy link xem trước: ' + err.message);
       return null;
     }
-  };
+  }, []);
 
-  const getFileTextContent = async (id) => {
+  const getFileTextContent = useCallback(async (id) => {
     try {
       const res = await storageApi.getFileTextContent(id);
       return res.content;
@@ -971,33 +1041,37 @@ export function FileProvider({ children }) {
       console.error('Lỗi lấy nội dung tệp:', err);
       return null;
     }
-  };
+  }, []);
 
-  const createShareLink = async (id, options = {}) => {
+  const createShareLink = useCallback(async (id, options = {}) => {
     try {
       return await sharingApi.createShareLink(id, options);
     } catch (err) {
       alert('Lỗi tạo link chia sẻ: ' + err.message);
       return null;
     }
-  };
+  }, []);
+
+  const handleSetCurrentFolderId = useCallback((id) => {
+    setCurrentFolderId(id);
+    setCurrentPage(1);
+  }, [setCurrentFolderId]);
+
+  const handleSetActiveTab = useCallback((tab) => {
+    if (activeTab === tab && !currentFolderId) return;
+    setActiveTab(tab);
+    setCurrentPage(1);
+  }, [activeTab, currentFolderId, setActiveTab]);
 
   return (
     <FileContext.Provider
       value={{
         items,
         currentFolderId,
-        setCurrentFolderId: (id) => {
-          setCurrentFolderId(id);
-          setCurrentPage(1);
-        },
+        setCurrentFolderId: handleSetCurrentFolderId,
         openFolder,
         activeTab,
-        setActiveTab: (tab) => {
-          if (activeTab === tab && !currentFolderId) return;
-          setActiveTab(tab);
-          setCurrentPage(1);
-        },
+        setActiveTab: handleSetActiveTab,
         viewMode,
         setViewMode,
         isSidebarCollapsed,

@@ -11,8 +11,6 @@ import {
     Copy, 
     Star, 
     FolderInput, 
-    Activity, 
-    FileText, 
     RotateCcw,
     Eye,
     Scissors,
@@ -35,6 +33,7 @@ export default function ContextMenu({
     canPaste = false,
     isPasting = false,
     onShare, 
+    onQuickCopyLink,
     onGemini, 
     onDownload, 
     onMoveToTrash, 
@@ -44,7 +43,6 @@ export default function ContextMenu({
     onShowInfo, 
     onDismissSuggestion 
 }) {
-    const [activeSubmenu, setActiveSubmenu] = useState(null);
     const menuRef = useRef(null);
 
     // Reposition menu to stay inside window bounds
@@ -260,84 +258,25 @@ export default function ContextMenu({
 
                     {/* 4. Chia sẻ — chỉ hiển thị khi là owner */}
                     {canShare && (
-                        <div
-                            className="relative"
-                            onMouseEnter={() => setActiveSubmenu('share')}
-                            onMouseLeave={() => setActiveSubmenu(null)}
-                        >
-                            <button
-                                onClick={() => { onShare?.(item); onClose(); }}
-                                className="w-full px-4 py-2 hover:bg-[#37393b] cursor-pointer flex items-center justify-between text-gray-200 transition-colors"
-                            >
-                                <div className="flex items-center gap-3">
-                                    <UserPlus className="w-4 h-4 text-gray-300 shrink-0" />
-                                    <span>Chia sẻ</span>
-                                </div>
-                                <ChevronRight className="w-4 h-4 text-gray-400" />
-                            </button>
-
-                            {/* Share Submenu */}
-                            {activeSubmenu === 'share' && (
-                                <div className="absolute left-full top-0 ml-1 w-48 bg-[#282a2c]/90 backdrop-blur-md text-gray-200 rounded-xl shadow-xl py-1.5 border border-gray-700/80 z-50 text-[13px]">
-                                    <button
-                                        onClick={() => { onShare?.(item); onClose(); }}
-                                        className="w-full px-4 py-2 hover:bg-[#37393b] flex items-center gap-2 text-left"
-                                    >
-                                        <UserPlus className="w-4 h-4 text-blue-400" />
-                                        <span>Chia sẻ...</span>
-                                    </button>
-                                    <button
-                                        onClick={() => { 
-                                            onShare?.(item); 
-                                            onClose(); 
-                                        }}
-                                        className="w-full px-4 py-2 hover:bg-[#37393b] flex items-center gap-2 text-left"
-                                    >
-                                        <Copy className="w-4 h-4 text-gray-300" />
-                                        <span>Sao chép đường liên kết...</span>
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {/* 6. Thông tin về thư mục / tệp */}
-                    <div
-                        className="relative"
-                        onMouseEnter={() => setActiveSubmenu('info')}
-                        onMouseLeave={() => setActiveSubmenu(null)}
-                    >
                         <button
-                            onClick={() => { onShowInfo?.(item, 'details'); onClose(); }}
+                            onClick={() => { onShare?.(item); onClose(); }}
                             className="w-full px-4 py-2 hover:bg-[#37393b] cursor-pointer flex items-center justify-between text-gray-200 transition-colors"
                         >
                             <div className="flex items-center gap-3">
-                                <Info className="w-4 h-4 text-gray-300 shrink-0" />
-                                <span>{isFolder ? 'Thông tin về thư mục' : 'Thông tin về tệp'}</span>
+                                <UserPlus className="w-4 h-4 text-gray-300 shrink-0" />
+                                <span>Chia sẻ</span>
                             </div>
-                            <ChevronRight className="w-4 h-4 text-gray-400" />
                         </button>
+                    )}
 
-                        {/* Info Submenu */}
-                        {activeSubmenu === 'info' && (
-                            <div className="absolute left-full top-0 ml-1 w-48 bg-[#282a2c]/90 backdrop-blur-md text-gray-200 rounded-xl shadow-xl py-1.5 border border-gray-700/80 z-50 text-[13px]">
-                                <button
-                                    onClick={() => { onShowInfo?.(item, 'details'); onClose(); }}
-                                    className="w-full px-4 py-2 hover:bg-[#37393b] flex items-center gap-2 text-left"
-                                >
-                                    <FileText className="w-4 h-4 text-gray-300" />
-                                    <span>Chi tiết</span>
-                                </button>
-                                <button
-                                    onClick={() => { onShowInfo?.(item, 'activity'); onClose(); }}
-                                    className="w-full px-4 py-2 hover:bg-[#37393b] flex items-center gap-2 text-left"
-                                >
-                                    <Activity className="w-4 h-4 text-gray-300" />
-                                    <span>Hoạt động</span>
-                                </button>
-                            </div>
-                        )}
-                    </div>
+                    {/* 6. Thông tin chi tiết & hoạt động */}
+                    <button
+                        onClick={() => { onShowInfo?.(item, 'details'); onClose(); }}
+                        className="w-full px-4 py-2 hover:bg-[#37393b] cursor-pointer flex items-center gap-3 text-gray-200 transition-colors"
+                    >
+                        <Info className="w-4 h-4 text-gray-300 shrink-0" />
+                        <span>Xem chi tiết & hoạt động</span>
+                    </button>
 
                     {/* Separator 3 */}
                     <div className="h-px bg-gray-700/60 my-1"></div>

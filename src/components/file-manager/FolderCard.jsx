@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Folder, MoreVertical, Star, Users, CheckSquare, Square } from 'lucide-react';
 
 const folderColorPalettes = [
@@ -20,7 +21,7 @@ function getFolderPalette(name = '') {
     return folderColorPalettes[index];
 }
 
-export default function FolderCard({ folder, onDoubleClick, onContextMenu, onStarToggle, isSelected, isCut = false, onToggleSelect, onSelectRange }) {
+function FolderCard({ folder, onDoubleClick, onContextMenu, onStarToggle, isSelected, isCut = false, onToggleSelect, onSelectRange }) {
     const palette = getFolderPalette(folder?.name);
 
     // Card click: no selection toggle here.
@@ -95,3 +96,5 @@ export default function FolderCard({ folder, onDoubleClick, onContextMenu, onSta
         </div>
     );
 }
+
+export default memo(FolderCard);

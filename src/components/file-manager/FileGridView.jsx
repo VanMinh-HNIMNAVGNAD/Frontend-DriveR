@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useFiles } from '../../context/FileContext';
+import { sharingApi } from '../../services/api';
+import toast from 'react-hot-toast';
 import FileSkeleton from '../common/FileSkeleton';
 import FolderCard from './FolderCard';
 import FileCard from './FileCard';
@@ -52,7 +54,7 @@ export default function FileGridView() {
     const [shareItemTarget, setShareItemTarget] = useState(null);
     const [geminiItemTarget, setGeminiItemTarget] = useState(null);
 
-    const openContextMenu = (e, item) => {
+    const openContextMenu = useCallback((e, item) => {
         e.preventDefault();
         e.stopPropagation();
         setContextMenu({
@@ -61,21 +63,21 @@ export default function FileGridView() {
             y: e.clientY,
             item
         });
-    };
+    }, []);
 
-    const closeContextMenu = () => {
+    const closeContextMenu = useCallback(() => {
         setContextMenu({ isOpen: false, x: 0, y: 0, item: null });
-    };
+    }, []);
 
-    const handleItemDoubleClick = (item) => {
+    const handleItemDoubleClick = useCallback((item) => {
         if (item.type === 'folder' && !item.isTrash && !item.isSpam) {
             openFolder(item);
         } else {
             openPreview(item);
         }
-    };
+    }, [openFolder, openPreview]);
 
-    const handleDownloadItem = async (item) => {
+    const handleDownloadItem = useCallback(async (item) => {
         try {
             if (item.type === 'folder') {
                 alert('Đang tạo liên kết tải xuống thư mục dạng ZIP...');
@@ -93,7 +95,26 @@ export default function FileGridView() {
         } catch (error) {
             console.error('Lỗi khi tải xuống:', error);
         }
-    };
+    }, [getDownloadUrl]);
+
+    const handleQuickCopyLink = useCallback(async (item) => {
+        try {
+            const res = await sharingApi.createShareLink(item.id, {
+                isDownloadAllowed: true,
+                isPreviewOnly: false,
+            });
+            const fullShareUrl = `${window.location.origin}/share/${res.shareToken}`;
+            await navigator.clipboard.writeText(fullShareUrl);
+            toast.success('Đã sao chép liên kết chia sẻ');
+        } catch (error) {
+            console.error('Lỗi khi sao chép nhanh liên kết chia sẻ:', error);
+            toast.error(error?.message || 'Không thể sao chép liên kết chia sẻ');
+        }
+    }, []);
+
+    const handleSelectRange = useCallback((id) => {
+        selectRange(id, folders, files);
+    }, [selectRange, folders, files]);
 
     if (isLoading) {
         return <FileSkeleton type="grid" count={10} />;
@@ -101,7 +122,10 @@ export default function FileGridView() {
 
     if (!currentFilteredItems || currentFilteredItems.length === 0) {
         return (
-            <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+            <div 
+                onContextMenu={(e) => e.preventDefault()}
+                className="flex flex-col items-center justify-center py-20 text-gray-400"
+            >
                 <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-3 text-gray-300">
                     <Folder className="w-8 h-8" />
                 </div>
@@ -112,7 +136,10 @@ export default function FileGridView() {
     }
 
     return (
-        <div className="flex flex-col h-full justify-between pb-4 select-none">
+        <div 
+            onContextMenu={(e) => e.preventDefault()}
+            className="flex flex-col h-full justify-between pb-4 select-none"
+        >
             <div className="space-y-6 overflow-y-auto pr-1">
                 {/* Section 1: Thư mục (Folders) */}
                 {folders && folders.length > 0 && (
@@ -132,7 +159,7 @@ export default function FileGridView() {
                                     isSelected={isSelected(folder.id)}
                                     isCut={clipboard.mode === 'cut' && clipboard.items.some((e) => e.id === folder.id)}
                                     onToggleSelect={toggleSelect}
-                                    onSelectRange={(id) => selectRange(id, folders, files)}
+                                    onSelectRange={handleSelectRange}
                                 />
                             ))}
                         </div>
@@ -158,7 +185,7 @@ export default function FileGridView() {
                                     isSelected={isSelected(file.id)}
                                     isCut={clipboard.mode === 'cut' && clipboard.items.some((e) => e.id === file.id)}
                                     onToggleSelect={toggleSelect}
-                                    onSelectRange={(id) => selectRange(id, folders, files)}
+                                    onSelectRange={handleSelectRange}
                                 />
                             ))}
                         </div>
@@ -224,6 +251,7 @@ export default function FileGridView() {
                 canPaste={clipboard.items.length > 0}
                 isPasting={isPasting}
                 onShare={(item) => setShareItemTarget(item)}
+                onQuickCopyLink={handleQuickCopyLink}
                 onGemini={(item) => setGeminiItemTarget(item)}
                 onToggleStar={(item) => toggleStar(item.id)}
                 onMoveToTrash={(item) => moveToTrash(item.id)}

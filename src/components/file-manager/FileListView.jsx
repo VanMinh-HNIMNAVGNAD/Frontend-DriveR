@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo, memo } from 'react';
 import { useFiles } from '../../context/FileContext';
+import { sharingApi } from '../../services/api';
+import toast from 'react-hot-toast';
 import { storageApi } from '../../services/api';
 import { formatBytes } from '../../utils/formatFileSize';
 import * as XLSX from 'xlsx';
@@ -50,6 +52,7 @@ function getFileCategoryForThumb(name = '') {
     if (/\.(png|jpg|jpeg|svg|webp|gif|bmp|ico)$/i.test(n)) return 'image';
     if (/\.(mp4|mkv|mov|webm)$/i.test(n)) return 'video';
     if (/\.(docx|doc)$/i.test(n)) return 'docx';
+    if (/\.(md|markdown)$/i.test(n)) return 'markdown';
     if (/\.(txt|md|markdown|log|env|conf|ini)$/i.test(n)) return 'textdoc';
     // Danh sách mở rộng toàn bộ các file code
     if (/\.(js|jsx|ts|tsx|py|java|c|cpp|h|hpp|cs|go|rb|php|sh|bash|zsh|json|xml|yaml|yml|toml|css|scss|sass|html|htm|vue|svelte|kt|swift|rs|dart|lua|sql|prisma|graphql)$/i.test(n)) {
@@ -153,7 +156,7 @@ function FileRowThumb({ file }) {
                 } catch { /* fallback icon */ }
             })();
 
-        } else if (cat === 'code' || cat === 'textdoc') {
+        } else if (cat === 'markdown' || cat === 'code' || cat === 'textdoc') {
             storageApi.getFileTextContent(file.id)
                 .then(res => {
                     if (isMounted && res?.content) {
@@ -200,9 +203,294 @@ function FileRowThumb({ file }) {
                     {textContent}
                 </div>
             )}
+            {cat === 'markdown' && !thumbType && (
+                <div className="w-full h-full bg-linear-to-br from-indigo-50 to-purple-50 flex items-center justify-center">
+                    <FileCode className="w-4 h-4 text-indigo-500" />
+                </div>
+            )}
         </div>
     );
 }
+
+const getFileTypeLabel = (item) => {
+    if (item.type === 'folder') return 'Thư mục';
+    const name = item.name.toLowerCase();
+    if (name.endsWith('.pdf')) return 'Tài liệu PDF';
+    if (name.endsWith('.xlsx') || name.endsWith('.csv')) return 'Bảng tính Excel';
+    if (name.endsWith('.docx') || name.endsWith('.doc')) return 'Văn bản Word';
+    if (name.endsWith('.pptx') || name.endsWith('.ppt')) return 'Trình chiếu PPT';
+    if (name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'Hình ảnh PNG/JPG';
+    if (name.endsWith('.svg')) return 'Đồ họa Vector SVG';
+    if (name.endsWith('.mp4') || name.endsWith('.mkv')) return 'Video Clip MP4';
+    if (name.endsWith('.mp3') || name.endsWith('.wav')) return 'Âm thanh MP3';
+    if (name.endsWith('.py')) return 'Mã nguồn Python';
+    if (name.endsWith('.js') || name.endsWith('.jsx') || name.endsWith('.ts')) return 'Mã nguồn Script';
+    if (name.endsWith('.sql') || name.endsWith('.db')) return 'Cơ sở dữ liệu SQL';
+    if (name.endsWith('.zip') || name.endsWith('.rar') || name.endsWith('.7z')) return 'Tệp nén ZIP/RAR';
+    if (name.endsWith('.md')) return 'Tài liệu Markdown';
+    if (name.endsWith('.fig')) return 'Thiết kế Figma';
+    if (name.endsWith('.exe')) return 'Tệp Thực thi EXE';
+    return 'Tệp tin';
+};
+
+const getFileIcon = (file) => {
+    const name = file.name.toLowerCase();
+    if (name.endsWith('.pdf')) return <FileText className="w-4 h-4 text-rose-500 shrink-0" />;
+    if (name.endsWith('.xlsx') || name.endsWith('.csv')) return <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />;
+    if (name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg')) return <ImageIcon className="w-4 h-4 text-purple-500 shrink-0" />;
+    if (name.endsWith('.svg')) return <ImageIcon className="w-4 h-4 text-pink-500 shrink-0" />;
+    if (name.endsWith('.docx') || name.endsWith('.txt') || name.endsWith('.md')) return <FileText className="w-4 h-4 text-blue-500 shrink-0" />;
+    if (name.endsWith('.mp4') || name.endsWith('.mkv')) return <Video className="w-4 h-4 text-violet-500 shrink-0" />;
+    if (name.endsWith('.mp3') || name.endsWith('.wav')) return <Music className="w-4 h-4 text-pink-500 shrink-0" />;
+    if (name.endsWith('.py') || name.endsWith('.js') || name.endsWith('.jsx') || name.endsWith('.ts')) return <FileCode className="w-4 h-4 text-amber-500 shrink-0" />;
+    if (name.endsWith('.sql') || name.endsWith('.db')) return <Database className="w-4 h-4 text-cyan-600 shrink-0" />;
+    if (name.endsWith('.fig')) return <Layers className="w-4 h-4 text-purple-600 shrink-0" />;
+    if (name.endsWith('.zip') || name.endsWith('.rar')) return <FileArchive className="w-4 h-4 text-amber-600 shrink-0" />;
+    if (name.endsWith('.exe')) return <FileCode className="w-4 h-4 text-rose-600 shrink-0" />;
+    return <File className="w-4 h-4 text-gray-500 shrink-0" />;
+};
+
+const FolderTableRow = memo(function FolderTableRow({
+    folder,
+    isSelected,
+    isCut,
+    activeTab,
+    onKeyDown,
+    onDoubleClick,
+    onContextMenu,
+    onToggleSelect,
+    onSelectRange,
+    onToggleStar,
+}) {
+    return (
+        <tr
+            tabIndex={0}
+            onKeyDown={(e) => onKeyDown(e, folder)}
+            onDoubleClick={() => onDoubleClick(folder)}
+            onContextMenu={(e) => onContextMenu(e, folder)}
+            className={`transition-colors group cursor-pointer ${isCut ? 'opacity-50 border-dashed' : ''} ${
+                isSelected ? 'bg-blue-50 ring-1 ring-inset ring-blue-200' : 'hover:bg-gray-50'
+            }`}
+        >
+            {/* Checkbox Column – only this triggers selection */}
+            <td
+                className="py-2.5 px-3 text-center"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    if (e.shiftKey) {
+                        e.preventDefault();
+                        onSelectRange(folder.id);
+                    } else {
+                        onToggleSelect(folder.id);
+                    }
+                }}
+            >
+                <button className="flex items-center justify-center text-gray-300 hover:text-blue-600 transition-colors">
+                    {isSelected ? <CheckSquare className="w-4 h-4 text-blue-600" /> : <Square className="w-4 h-4" />}
+                </button>
+            </td>
+
+            {/* Star Column – moved after checkbox */}
+            <td className="py-2.5 px-3 text-center">
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleStar(folder.id);
+                    }}
+                    className="text-gray-300 hover:text-amber-400 p-1"
+                >
+                    <Star className={`w-4 h-4 ${folder.isStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
+                </button>
+            </td>
+
+            {/* Name Column */}
+            <td className="py-2.5 px-3">
+                <div className="flex items-center gap-2.5">
+                    <div className="p-1.5 rounded-lg bg-amber-50 text-amber-600 shrink-0">
+                        <Folder className="w-4 h-4 fill-amber-400" />
+                    </div>
+                    <span className="font-semibold text-gray-900 group-hover:text-blue-600 truncate max-w-[200px]" title={folder.name}>
+                        {folder.name}
+                    </span>
+                </div>
+            </td>
+
+            {/* Size Column */}
+            <td className="py-2.5 px-3 text-gray-500 font-mono text-[11px]">--</td>
+
+            {/* Type Column */}
+            <td className="py-2.5 px-3 hidden lg:table-cell">
+                <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-medium text-[11px] border border-amber-200/60">
+                    Thư mục
+                </span>
+            </td>
+
+            {/* Owner Column */}
+            <td className="py-2.5 px-3 text-gray-700 font-medium truncate max-w-[140px] hidden sm:table-cell">
+                {activeTab === 'shared-with-me' && folder.sharedOwner ? (
+                    <div className="flex items-center gap-2">
+                        {folder.sharedOwner.avatarUrl ? (
+                            <img src={folder.sharedOwner.avatarUrl} alt="" className="w-5 h-5 rounded-full object-cover shrink-0" />
+                        ) : (
+                            <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-[9px] font-bold shrink-0">
+                                {folder.sharedOwner.fullName?.charAt(0)?.toUpperCase() || '?'}
+                            </div>
+                        )}
+                        <span className="truncate text-[11px]">{folder.sharedOwner.fullName || folder.owner}</span>
+                        <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded-md font-bold ${
+                            folder.sharedRole === 'EDITOR' 
+                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' 
+                                : 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-400'
+                        }`}>
+                            {folder.sharedRole === 'EDITOR' ? 'Sửa' : 'Xem'}
+                        </span>
+                    </div>
+                ) : (
+                    folder.owner || 'Tôi'
+                )}
+            </td>
+
+            {/* Modified Column */}
+            <td className="py-2.5 px-3 text-gray-500 font-mono text-[11px] whitespace-nowrap hidden sm:table-cell">
+                {activeTab === 'shared-with-me' && folder.sharedAt 
+                    ? folder.sharedAt 
+                    : folder.updatedAt}
+            </td>
+
+            {/* Action Options */}
+            <td className="py-2.5 px-3 text-center">
+                <button
+                    onClick={(e) => onContextMenu(e, folder)}
+                    className="p-1 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                >
+                    <MoreVertical className="w-4 h-4" />
+                </button>
+            </td>
+        </tr>
+    );
+});
+
+const FileTableRow = memo(function FileTableRow({
+    file,
+    isSelected,
+    isCut,
+    activeTab,
+    onKeyDown,
+    onDoubleClick,
+    onContextMenu,
+    onToggleSelect,
+    onSelectRange,
+    onToggleStar,
+}) {
+    return (
+        <tr
+            tabIndex={0}
+            onKeyDown={(e) => onKeyDown(e, file)}
+            onDoubleClick={() => onDoubleClick(file)}
+            onContextMenu={(e) => onContextMenu(e, file)}
+            className={`transition-colors group cursor-pointer ${isCut ? 'opacity-50 border-dashed' : ''} ${
+                isSelected ? 'bg-blue-50 ring-1 ring-inset ring-blue-200' : 'hover:bg-gray-50'
+            }`}
+        >
+            {/* Checkbox Column – only this triggers selection */}
+            <td
+                className="py-2.5 px-3 text-center"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    if (e.shiftKey) {
+                        e.preventDefault();
+                        onSelectRange(file.id);
+                    } else {
+                        onToggleSelect(file.id);
+                    }
+                }}
+            >
+                <button className="flex items-center justify-center text-gray-300 hover:text-blue-600 transition-colors">
+                    {isSelected ? <CheckSquare className="w-4 h-4 text-blue-600" /> : <Square className="w-4 h-4" />}
+                </button>
+            </td>
+
+            {/* Star Column */}
+            <td className="py-2.5 px-3 text-center">
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleStar(file.id);
+                    }}
+                    className="text-gray-300 hover:text-amber-400 p-1"
+                >
+                    <Star className={`w-4 h-4 ${file.isStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
+                </button>
+            </td>
+
+            {/* Name Column */}
+            <td className="py-2.5 px-3">
+                <div className="flex items-center gap-2">
+                    {getFileIcon(file)}
+                    <FileRowThumb file={file} />
+                    <span className="font-semibold text-gray-900 group-hover:text-blue-600 truncate max-w-[180px]" title={file.name}>
+                        {file.name}
+                    </span>
+                </div>
+            </td>
+
+            {/* Size Column */}
+            <td className="py-2.5 px-3 text-gray-700 font-mono font-medium text-[11px]">
+                {formatBytes(file.size)}
+            </td>
+
+            {/* Type Column */}
+            <td className="py-2.5 px-3 hidden lg:table-cell">
+                <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-medium text-[11px] border border-blue-200/60 whitespace-nowrap">
+                    {getFileTypeLabel(file)}
+                </span>
+            </td>
+
+            {/* Owner Column */}
+            <td className="py-2.5 px-3 text-gray-700 font-medium truncate max-w-[140px] hidden sm:table-cell">
+                {activeTab === 'shared-with-me' && file.sharedOwner ? (
+                    <div className="flex items-center gap-2">
+                        {file.sharedOwner.avatarUrl ? (
+                            <img src={file.sharedOwner.avatarUrl} alt="" className="w-5 h-5 rounded-full object-cover shrink-0" />
+                        ) : (
+                            <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-[9px] font-bold shrink-0">
+                                {file.sharedOwner.fullName?.charAt(0)?.toUpperCase() || '?'}
+                            </div>
+                        )}
+                        <span className="truncate text-[11px]">{file.sharedOwner.fullName || file.owner}</span>
+                        <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded-md font-bold ${
+                            file.sharedRole === 'EDITOR' 
+                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' 
+                                : 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-400'
+                        }`}>
+                            {file.sharedRole === 'EDITOR' ? 'Sửa' : 'Xem'}
+                        </span>
+                    </div>
+                ) : (
+                    file.owner || 'Tôi'
+                )}
+            </td>
+
+            {/* Modified Column */}
+            <td className="py-2.5 px-3 text-gray-500 font-mono text-[11px] whitespace-nowrap hidden sm:table-cell">
+                {activeTab === 'shared-with-me' && file.sharedAt 
+                    ? file.sharedAt 
+                    : file.updatedAt}
+            </td>
+
+            {/* Action Options */}
+            <td className="py-2.5 px-3 text-center">
+                <button
+                    onClick={(e) => onContextMenu(e, file)}
+                    className="p-1 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                >
+                    <MoreVertical className="w-4 h-4" />
+                </button>
+            </td>
+        </tr>
+    );
+});
+
 // ──────────────────────────────────────────────────────────────────
 
 export default function FileListView() {
@@ -259,69 +547,43 @@ export default function FileListView() {
     const allSelected = allCurrentCount > 0 && selectedCount >= allCurrentCount;
     const someSelected = selectedCount > 0 && !allSelected;
 
-    // Row click: no selection here.
-    // Selection is handled exclusively by the checkbox column.
-
-    const getFileTypeLabel = (item) => {
-        if (item.type === 'folder') return 'Thư mục';
-        const name = item.name.toLowerCase();
-        if (name.endsWith('.pdf')) return 'Tài liệu PDF';
-        if (name.endsWith('.xlsx') || name.endsWith('.csv')) return 'Bảng tính Excel';
-        if (name.endsWith('.docx') || name.endsWith('.doc')) return 'Văn bản Word';
-        if (name.endsWith('.pptx') || name.endsWith('.ppt')) return 'Trình chiếu PPT';
-        if (name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'Hình ảnh PNG/JPG';
-        if (name.endsWith('.svg')) return 'Đồ họa Vector SVG';
-        if (name.endsWith('.mp4') || name.endsWith('.mkv')) return 'Video Clip MP4';
-        if (name.endsWith('.mp3') || name.endsWith('.wav')) return 'Âm thanh MP3';
-        if (name.endsWith('.py')) return 'Mã nguồn Python';
-        if (name.endsWith('.js') || name.endsWith('.jsx') || name.endsWith('.ts')) return 'Mã nguồn Script';
-        if (name.endsWith('.sql') || name.endsWith('.db')) return 'Cơ sở dữ liệu SQL';
-        if (name.endsWith('.zip') || name.endsWith('.rar') || name.endsWith('.7z')) return 'Tệp nén ZIP/RAR';
-        if (name.endsWith('.md')) return 'Tài liệu Markdown';
-        if (name.endsWith('.fig')) return 'Thiết kế Figma';
-        if (name.endsWith('.exe')) return 'Tệp Thực thi EXE';
-        return 'Tệp tin';
-    };
-
-    const getFileIcon = (file) => {
-        const name = file.name.toLowerCase();
-        if (name.endsWith('.pdf')) return <FileText className="w-4 h-4 text-rose-500 shrink-0" />;
-        if (name.endsWith('.xlsx') || name.endsWith('.csv')) return <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />;
-        if (name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg')) return <ImageIcon className="w-4 h-4 text-purple-500 shrink-0" />;
-        if (name.endsWith('.svg')) return <ImageIcon className="w-4 h-4 text-pink-500 shrink-0" />;
-        if (name.endsWith('.docx') || name.endsWith('.txt') || name.endsWith('.md')) return <FileText className="w-4 h-4 text-blue-500 shrink-0" />;
-        if (name.endsWith('.mp4') || name.endsWith('.mkv')) return <Video className="w-4 h-4 text-violet-500 shrink-0" />;
-        if (name.endsWith('.mp3') || name.endsWith('.wav')) return <Music className="w-4 h-4 text-pink-500 shrink-0" />;
-        if (name.endsWith('.py') || name.endsWith('.js') || name.endsWith('.jsx') || name.endsWith('.ts')) return <FileCode className="w-4 h-4 text-amber-500 shrink-0" />;
-        if (name.endsWith('.sql') || name.endsWith('.db')) return <Database className="w-4 h-4 text-cyan-600 shrink-0" />;
-        if (name.endsWith('.fig')) return <Layers className="w-4 h-4 text-purple-600 shrink-0" />;
-        if (name.endsWith('.zip') || name.endsWith('.rar')) return <FileArchive className="w-4 h-4 text-amber-600 shrink-0" />;
-        if (name.endsWith('.exe')) return <FileCode className="w-4 h-4 text-rose-600 shrink-0" />;
-        return <File className="w-4 h-4 text-gray-500 shrink-0" />;
-    };
-
-    const handleSort = (field) => {
+    const handleSort = useCallback((field) => {
         if (sortField === field) {
             setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
         } else {
             setSortField(field);
             setSortDirection('asc');
         }
-    };
+    }, [sortField, setSortDirection, setSortField]);
 
     // Folders and files are already sorted by FileContext
     const sortedFolders = folders || [];
     const sortedFiles = files || [];
 
-    const handleItemDoubleClick = (item) => {
+    const handleItemDoubleClick = useCallback((item) => {
         if (item.type === 'folder' && !item.isTrash && !item.isSpam) {
             openFolder(item);
         } else {
             openPreview(item);
         }
-    };
+    }, [openFolder, openPreview]);
 
-    const openContextMenu = (e, item) => {
+    const handleQuickCopyLink = useCallback(async (item) => {
+        try {
+            const res = await sharingApi.createShareLink(item.id, {
+                isDownloadAllowed: true,
+                isPreviewOnly: false,
+            });
+            const fullShareUrl = `${window.location.origin}/share/${res.shareToken}`;
+            await navigator.clipboard.writeText(fullShareUrl);
+            toast.success('Đã sao chép liên kết chia sẻ');
+        } catch (error) {
+            console.error('Lỗi khi sao chép nhanh liên kết chia sẻ:', error);
+            toast.error(error?.message || 'Không thể sao chép liên kết chia sẻ');
+        }
+    }, []);
+
+    const openContextMenu = useCallback((e, item) => {
         e.preventDefault();
         e.stopPropagation();
         setContextMenu({
@@ -330,13 +592,13 @@ export default function FileListView() {
             y: e.clientY,
             item
         });
-    };
+    }, []);
 
-    const closeContextMenu = () => {
+    const closeContextMenu = useCallback(() => {
         setContextMenu({ isOpen: false, x: 0, y: 0, item: null });
-    };
+    }, []);
 
-    const handleKeyDown = (e, item) => {
+    const handleKeyDown = useCallback((e, item) => {
         if (e.ctrlKey && e.altKey && (e.key === 'e' || e.key === 'E')) {
             e.preventDefault();
             setRenameItemTarget(item);
@@ -344,7 +606,11 @@ export default function FileListView() {
             e.preventDefault();
             moveToTrash(item.id);
         }
-    };
+    }, [moveToTrash]);
+
+    const handleSelectRange = useCallback((id) => {
+        selectRange(id, folders, files);
+    }, [selectRange, folders, files]);
 
     if (isLoading) {
         return <FileSkeleton count={10} type="table" />;
@@ -352,7 +618,10 @@ export default function FileListView() {
 
     if (currentFilteredItems.length === 0) {
         return (
-            <div className="flex flex-col items-center justify-center py-20 text-gray-400 select-none">
+            <div 
+                onContextMenu={(e) => e.preventDefault()}
+                className="flex flex-col items-center justify-center py-20 text-gray-400 select-none"
+            >
                 <FolderOpen className="w-16 h-16 stroke-1 text-gray-300 mb-3" />
                 <p className="text-sm font-medium text-gray-500">Chưa có tệp hoặc thư mục nào ở đây</p>
             </div>
@@ -360,7 +629,10 @@ export default function FileListView() {
     }
 
     return (
-        <div className="w-full flex flex-col h-full justify-between select-none text-xs sm:text-sm relative">
+        <div 
+            onContextMenu={(e) => e.preventDefault()}
+            className="w-full flex flex-col h-full justify-between select-none text-xs sm:text-sm relative"
+        >
             {/* Extended Metadata Table View */}
             <div className="w-full overflow-x-auto rounded-xl border border-gray-100 shadow-2xs bg-white">
                 <table className="w-full text-left border-collapse min-w-[850px]">
@@ -458,239 +730,38 @@ export default function FileListView() {
 
                     <tbody className="divide-y divide-gray-200 text-xs">
                         {/* Render Folders */}
-                        {sortedFolders.map((folder) => {
-                            const itemSelected = isSelected(folder.id);
-                            const isCut = clipboard.mode === 'cut' && clipboard.items.some((e) => e.id === folder.id);
-                            return (
-                                <tr
-                                    key={folder.id}
-                                    tabIndex={0}
-                                    onKeyDown={(e) => handleKeyDown(e, folder)}
-                                    onDoubleClick={() => handleItemDoubleClick(folder)}
-                                    onContextMenu={(e) => openContextMenu(e, folder)}
-                                    className={`transition-colors group cursor-pointer ${isCut ? 'opacity-50 border-dashed' : ''
-                                        } ${itemSelected
-                                            ? 'bg-blue-50 ring-1 ring-inset ring-blue-200'
-                                            : 'hover:bg-gray-50'
-                                        }`}
-                                >
-                                    {/* Checkbox Column – only this triggers selection */}
-                                    <td
-                                        className="py-2.5 px-3 text-center"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            if (e.shiftKey) {
-                                                e.preventDefault();
-                                                selectRange(folder.id, folders, files);
-                                            } else {
-                                                toggleSelect(folder.id);
-                                            }
-                                        }}
-                                    >
-                                        <button className="flex items-center justify-center text-gray-300 hover:text-blue-600 transition-colors">
-                                            {itemSelected
-                                                ? <CheckSquare className="w-4 h-4 text-blue-600" />
-                                                : <Square className="w-4 h-4" />}
-                                        </button>
-                                    </td>
-
-                                    {/* Star Column – moved after checkbox */}
-                                    <td className="py-2.5 px-3 text-center">
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                toggleStar(folder.id);
-                                            }}
-                                            className="text-gray-300 hover:text-amber-400 p-1"
-                                        >
-                                            <Star className={`w-4 h-4 ${folder.isStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
-                                        </button>
-                                    </td>
-
-                                    {/* Name Column */}
-                                    <td className="py-2.5 px-3">
-                                        <div className="flex items-center gap-2.5">
-                                            <div className="p-1.5 rounded-lg bg-amber-50 text-amber-600 shrink-0">
-                                                <Folder className="w-4 h-4 fill-amber-400" />
-                                            </div>
-                                            <span className="font-semibold text-gray-900 group-hover:text-blue-600 truncate max-w-[200px]" title={folder.name}>
-                                                {folder.name}
-                                            </span>
-                                        </div>
-                                    </td>
-
-                                    {/* Size Column */}
-                                    <td className="py-2.5 px-3 text-gray-500 font-mono text-[11px]">--</td>
-
-                                    {/* Type Column */}
-                                    <td className="py-2.5 px-3 hidden lg:table-cell">
-                                        <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-medium text-[11px] border border-amber-200/60">
-                                            Thư mục
-                                        </span>
-                                    </td>
-
-                                    {/* Owner Column */}
-                                    <td className="py-2.5 px-3 text-gray-700 font-medium truncate max-w-[140px] hidden sm:table-cell">
-                                        {activeTab === 'shared-with-me' && folder.sharedOwner ? (
-                                            <div className="flex items-center gap-2">
-                                                {folder.sharedOwner.avatarUrl ? (
-                                                    <img src={folder.sharedOwner.avatarUrl} alt="" className="w-5 h-5 rounded-full object-cover shrink-0" />
-                                                ) : (
-                                                    <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-[9px] font-bold shrink-0">
-                                                        {folder.sharedOwner.fullName?.charAt(0)?.toUpperCase() || '?'}
-                                                    </div>
-                                                )}
-                                                <span className="truncate text-[11px]">{folder.sharedOwner.fullName || folder.owner}</span>
-                                                <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded-md font-bold ${
-                                                    folder.sharedRole === 'EDITOR' 
-                                                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' 
-                                                        : 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-400'
-                                                }`}>
-                                                    {folder.sharedRole === 'EDITOR' ? 'Sửa' : 'Xem'}
-                                                </span>
-                                            </div>
-                                        ) : (
-                                            folder.owner || 'Tôi'
-                                        )}
-                                    </td>
-
-                                    {/* Modified Column */}
-                                    <td className="py-2.5 px-3 text-gray-500 font-mono text-[11px] whitespace-nowrap hidden sm:table-cell">
-                                        {activeTab === 'shared-with-me' && folder.sharedAt 
-                                            ? folder.sharedAt 
-                                            : folder.updatedAt}
-                                    </td>
-
-                                    {/* Action Options */}
-                                    <td className="py-2.5 px-3 text-center">
-                                        <button
-                                            onClick={(e) => openContextMenu(e, folder)}
-                                            className="p-1 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-                                        >
-                                            <MoreVertical className="w-4 h-4" />
-                                        </button>
-                                    </td>
-                                </tr>
-                            );
-                        })}
+                        {sortedFolders.map((folder) => (
+                            <FolderTableRow
+                                key={folder.id}
+                                folder={folder}
+                                isSelected={isSelected(folder.id)}
+                                isCut={clipboard.mode === 'cut' && clipboard.items.some((e) => e.id === folder.id)}
+                                activeTab={activeTab}
+                                onKeyDown={handleKeyDown}
+                                onDoubleClick={handleItemDoubleClick}
+                                onContextMenu={openContextMenu}
+                                onToggleSelect={toggleSelect}
+                                onSelectRange={handleSelectRange}
+                                onToggleStar={toggleStar}
+                            />
+                        ))}
 
                         {/* Render Files */}
-                        {sortedFiles.map((file) => {
-                            const itemSelected = isSelected(file.id);
-                            const isCut = clipboard.mode === 'cut' && clipboard.items.some((e) => e.id === file.id);
-                            return (
-                                <tr
-                                    key={file.id}
-                                    tabIndex={0}
-                                    onKeyDown={(e) => handleKeyDown(e, file)}
-                                    onDoubleClick={() => handleItemDoubleClick(file)}
-                                    onContextMenu={(e) => openContextMenu(e, file)}
-                                    className={`transition-colors group cursor-pointer ${isCut ? 'opacity-50 border-dashed' : ''
-                                        } ${itemSelected
-                                            ? 'bg-blue-50 ring-1 ring-inset ring-blue-200'
-                                            : 'hover:bg-gray-50'
-                                        }`}
-                                >
-                                    {/* Checkbox Column – only this triggers selection */}
-                                    <td
-                                        className="py-2.5 px-3 text-center"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            if (e.shiftKey) {
-                                                e.preventDefault();
-                                                selectRange(file.id, folders, files);
-                                            } else {
-                                                toggleSelect(file.id);
-                                            }
-                                        }}
-                                    >
-                                        <button className="flex items-center justify-center text-gray-300 hover:text-blue-600 transition-colors">
-                                            {itemSelected
-                                                ? <CheckSquare className="w-4 h-4 text-blue-600" />
-                                                : <Square className="w-4 h-4" />}
-                                        </button>
-                                    </td>
-
-                                    {/* Star Column */}
-                                    <td className="py-2.5 px-3 text-center">
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                toggleStar(file.id);
-                                            }}
-                                            className="text-gray-300 hover:text-amber-400 p-1"
-                                        >
-                                            <Star className={`w-4 h-4 ${file.isStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
-                                        </button>
-                                    </td>
-
-                                    {/* Name Column */}
-                                    <td className="py-2.5 px-3">
-                                        <div className="flex items-center gap-2">
-                                            {getFileIcon(file)}
-                                            <FileRowThumb file={file} />
-                                            <span className="font-semibold text-gray-900 group-hover:text-blue-600 truncate max-w-[180px]" title={file.name}>
-                                                {file.name}
-                                            </span>
-                                        </div>
-                                    </td>
-
-                                    {/* Size Column */}
-                                    <td className="py-2.5 px-3 text-gray-700 font-mono font-medium text-[11px]">
-                                        {formatBytes(file.size)}
-                                    </td>
-
-                                    {/* Type Column */}
-                                    <td className="py-2.5 px-3 hidden lg:table-cell">
-                                        <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-medium text-[11px] border border-blue-200/60 whitespace-nowrap">
-                                            {getFileTypeLabel(file)}
-                                        </span>
-                                    </td>
-
-                                    {/* Owner Column */}
-                                    <td className="py-2.5 px-3 text-gray-700 font-medium truncate max-w-[140px] hidden sm:table-cell">
-                                        {activeTab === 'shared-with-me' && file.sharedOwner ? (
-                                            <div className="flex items-center gap-2">
-                                                {file.sharedOwner.avatarUrl ? (
-                                                    <img src={file.sharedOwner.avatarUrl} alt="" className="w-5 h-5 rounded-full object-cover shrink-0" />
-                                                ) : (
-                                                    <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-[9px] font-bold shrink-0">
-                                                        {file.sharedOwner.fullName?.charAt(0)?.toUpperCase() || '?'}
-                                                    </div>
-                                                )}
-                                                <span className="truncate text-[11px]">{file.sharedOwner.fullName || file.owner}</span>
-                                                <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded-md font-bold ${
-                                                    file.sharedRole === 'EDITOR' 
-                                                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' 
-                                                        : 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-400'
-                                                }`}>
-                                                    {file.sharedRole === 'EDITOR' ? 'Sửa' : 'Xem'}
-                                                </span>
-                                            </div>
-                                        ) : (
-                                            file.owner || 'Tôi'
-                                        )}
-                                    </td>
-
-                                    {/* Modified Column */}
-                                    <td className="py-2.5 px-3 text-gray-500 font-mono text-[11px] whitespace-nowrap hidden sm:table-cell">
-                                        {activeTab === 'shared-with-me' && file.sharedAt 
-                                            ? file.sharedAt 
-                                            : file.updatedAt}
-                                    </td>
-
-                                    {/* Action Options */}
-                                    <td className="py-2.5 px-3 text-center">
-                                        <button
-                                            onClick={(e) => openContextMenu(e, file)}
-                                            className="p-1 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-                                        >
-                                            <MoreVertical className="w-4 h-4" />
-                                        </button>
-                                    </td>
-                                </tr>
-                            );
-                        })}
+                        {sortedFiles.map((file) => (
+                            <FileTableRow
+                                key={file.id}
+                                file={file}
+                                isSelected={isSelected(file.id)}
+                                isCut={clipboard.mode === 'cut' && clipboard.items.some((e) => e.id === file.id)}
+                                activeTab={activeTab}
+                                onKeyDown={handleKeyDown}
+                                onDoubleClick={handleItemDoubleClick}
+                                onContextMenu={openContextMenu}
+                                onToggleSelect={toggleSelect}
+                                onSelectRange={handleSelectRange}
+                                onToggleStar={toggleStar}
+                            />
+                        ))}
                     </tbody>
                 </table>
             </div>
@@ -767,6 +838,7 @@ export default function FileListView() {
                 canPaste={clipboard.items.length > 0}
                 isPasting={isPasting}
                 onShare={(item) => setShareItemTarget(item)}
+                onQuickCopyLink={handleQuickCopyLink}
                 onGemini={(item) => setGeminiItemTarget(item)}
                 onToggleStar={(item) => toggleStar(item.id)}
                 onMoveToTrash={(item) => moveToTrash(item.id)}

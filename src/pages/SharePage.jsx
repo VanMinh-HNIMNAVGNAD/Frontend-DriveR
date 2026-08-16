@@ -28,6 +28,7 @@ const PREVIEW_DOCX  = (mime, name) =>
 const PREVIEW_TEXT  = (mime, name) =>
   mime?.startsWith('text/') ||
   /\.(js|jsx|ts|tsx|py|html|css|json|sql|md|txt|xml|yaml|yml|sh|env|conf|log|c|cpp|h|hpp|java|go|rs|kt|php|vue|svelte|cs)$/i.test(name ?? '');
+const isMarkdownFile = (name = '') => /\.(md|markdown)$/i.test(name ?? '');
 
 // ─── Helper: icon MIME ────────────────────────────────────────────────────────
 function mimeColor(mimeType, type, name) {
@@ -336,13 +337,17 @@ function CodeTextPreview({ url, name }) {
   const [copied, setCopied]   = useState(false);
   const [mdViewMode, setMdViewMode] = useState('preview'); // 'preview' | 'source'
 
-  const isMd = /\.(md|markdown)$/i.test(name ?? '');
+  const isMd = isMarkdownFile(name);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(url);
+        const res = await fetch(url, {
+          headers: {
+            Accept: 'text/plain, text/markdown, */*',
+          },
+        });
         if (!res.ok) throw new Error('fetch failed');
         let text = await res.text();
         if (text.length > 150_000) text = text.slice(0, 150_000) + '\n\n[... nội dung bị cắt bớt do quá dài]';
@@ -549,6 +554,7 @@ function ChildFilePreviewModal({
   loading,
   error,
   previewBlocked,
+  previewDisabledByOwner,
   isDownloadAllowed,
   onDownload,
   onClose,
@@ -712,7 +718,12 @@ function ChildFilePreviewModal({
         )}
 
         {previewBlocked && !loading && !error && (
-          <RestrictedPreviewNotice file={file} message="Tệp này không cho phép xem trước, vui lòng tải xuống" />
+          <RestrictedPreviewNotice
+            file={file}
+            message={previewDisabledByOwner
+              ? "Chủ sở hữu đã tắt tính năng xem trước tệp này. Vui lòng bấm 'Tải về' để xem nội dung."
+              : 'Tệp này không cho phép xem trước, vui lòng tải xuống'}
+          />
         )}
 
         {error && !loading && !previewBlocked && (
@@ -839,7 +850,7 @@ function ChildFilePreviewModal({
 }
 
 // ─── Folder Browser — bảng danh sách file con ────────────────────────────────
-function FolderBrowser({ token, rootFolderName, isDownloadAllowed, onOpenFile }) {
+function FolderBrowser({ token, rootFolderName, isDownloadAllowed, onOpenFile, shareAuthToken }) {
   const [stack, setStack]         = useState([{ id: null, name: rootFolderName }]); // breadcrumb stack
   const [children, setChildren]   = useState([]);
   const [loading, setLoading]     = useState(true);
@@ -854,7 +865,7 @@ function FolderBrowser({ token, rootFolderName, isDownloadAllowed, onOpenFile })
     setLoading(true);
     setError(null);
 
-    sharingApi.getSharedChildren(token, currentFolderId || undefined)
+    sharingApi.getSharedChildren(token, currentFolderId || undefined, shareAuthToken || undefined)
       .then((data) => {
         if (!cancelled) setChildren(data.items || []);
       })
@@ -866,7 +877,7 @@ function FolderBrowser({ token, rootFolderName, isDownloadAllowed, onOpenFile })
       });
 
     return () => { cancelled = true; };
-  }, [token, currentFolderId]);
+  }, [token, currentFolderId, shareAuthToken]);
 
   // Mở subfolder
   function handleOpenFolder(item) {
@@ -883,11 +894,33 @@ function FolderBrowser({ token, rootFolderName, isDownloadAllowed, onOpenFile })
     if (zipLoading) return;
     setZipLoading(true);
     try {
-      // Endpoint /download-url với token — khi folder sẽ trả về ZIP stream trực tiếp
-      window.open(
-        `${(import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api/v1')}/shares/${token}/download-url`,
-        '_blank',
-      );
+      const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api/v1';
+      const headers = shareAuthToken ? { Authorization: `Bearer ${shareAuthToken}` } : {};
+      const res = await fetch(`${apiBase}/shares/${token}/download-url`, { headers });
+
+      if (!res.ok) {
+        let message = 'Không thể tải xuống thư mục lúc này.';
+        try {
+          const errJson = await res.json();
+          message = errJson?.message || message;
+        } catch {
+          // response không phải JSON hợp lệ — dùng message mặc định
+        }
+        alert(message);
+        return;
+      }
+
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `${rootFolderName || 'driveR_download'}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      alert(err?.message || 'Không thể tải xuống thư mục lúc này.');
     } finally {
       setZipLoading(false);
     }
@@ -1034,6 +1067,10 @@ export default function SharePage() {
   const navigate   = useNavigate();
 
   const [shareData, setShareData]           = useState(null);
+  const [shareAuthToken, setShareAuthToken] = useState(sessionStorage.getItem('shareAuthToken') || '');
+  const [passwordInput, setPasswordInput]   = useState('');
+  const [passwordSubmitting, setPasswordSubmitting] = useState(false);
+  const [passwordError, setPasswordError]   = useState('');
   const [previewUrl, setPreviewUrl]         = useState(null);
   const [loadingPage, setLoadingPage]       = useState(true);
   const [loadingPreview, setLoadingPreview] = useState(false);
@@ -1071,6 +1108,7 @@ export default function SharePage() {
   // ── Bước 2: Tự động tải preview URL cho FILE ──────────────────────────────
   useEffect(() => {
     if (!shareData || shareData.file.type === 'folder') return;
+    if (shareData.hasPassword && !shareAuthToken) return;
 
     const { file } = shareData;
     const canPreview =
@@ -1085,7 +1123,7 @@ export default function SharePage() {
     setPreviewBlocked(false);
     setPreviewUrl(null);
 
-    sharingApi.getSharedPreviewUrl(token)
+    sharingApi.getSharedPreviewUrl(token, undefined, shareAuthToken || undefined)
       .then((res) => {
         if (!cancelled) {
           const url = typeof res === 'string' ? res : (res?.previewUrl || res?.url);
@@ -1100,14 +1138,14 @@ export default function SharePage() {
       .finally(() => { if (!cancelled) setLoadingPreview(false); });
 
     return () => { cancelled = true; };
-  }, [shareData, token]);
+  }, [shareData, token, shareAuthToken]);
 
   // ── Handler: Tải xuống (file gốc) ─────────────────────────────────────────
   const handleDownload = useCallback(async () => {
     if (downloadLoading) return;
     setDownloadLoading(true);
     try {
-      const res = await sharingApi.getSharedDownloadUrl(token);
+      const res = await sharingApi.getSharedDownloadUrl(token, undefined, shareAuthToken || undefined);
       const url = typeof res === 'string' ? res : (res?.downloadUrl || res?.url);
       if (url) {
         const a = document.createElement('a');
@@ -1123,7 +1161,7 @@ export default function SharePage() {
     } finally {
       setDownloadLoading(false);
     }
-  }, [downloadLoading, token, shareData]);
+  }, [downloadLoading, token, shareData, shareAuthToken]);
 
   // ── Handler: Mở preview file con trong folder ─────────────────────────────
   const handleOpenChildFile = useCallback(async (childFile) => {
@@ -1136,7 +1174,7 @@ export default function SharePage() {
     setChildPreviewLoading(true);
 
     try {
-      const res = await sharingApi.getSharedPreviewUrl(token, childFile.id);
+      const res = await sharingApi.getSharedPreviewUrl(token, childFile.id, shareAuthToken || undefined);
       const url = typeof res === 'string' ? res : (res?.previewUrl || res?.url);
       if (url) {
         setChildPreviewUrl(url);
@@ -1152,13 +1190,13 @@ export default function SharePage() {
     } finally {
       setChildPreviewLoading(false);
     }
-  }, [token]);
+  }, [token, shareAuthToken]);
 
   // ── Handler: Tải xuống riêng file con trong folder ─────────────────────────
   const handleDownloadChild = useCallback(async (childFile) => {
     if (!childFile) return;
     try {
-      const res = await sharingApi.getSharedDownloadUrl(token, childFile.id);
+      const res = await sharingApi.getSharedDownloadUrl(token, childFile.id, shareAuthToken || undefined);
       const url = typeof res === 'string' ? res : (res?.downloadUrl || res?.url);
       if (url) {
         const a = document.createElement('a');
@@ -1172,7 +1210,33 @@ export default function SharePage() {
     } catch (err) {
       alert(err?.message || 'Không thể tải xuống tệp tin lúc này.');
     }
-  }, [token]);
+  }, [token, shareAuthToken]);
+
+  const handleVerifyPassword = useCallback(async (event) => {
+    event.preventDefault();
+    if (!passwordInput.trim()) {
+      setPasswordError('Vui lòng nhập mật khẩu');
+      return;
+    }
+
+    setPasswordSubmitting(true);
+    setPasswordError('');
+
+    try {
+      const res = await sharingApi.verifySharePassword(token, passwordInput.trim());
+      const nextToken = res?.accessToken || res?.token;
+      if (!nextToken) {
+        throw new Error('Không nhận được token xác thực từ máy chủ.');
+      }
+      setShareAuthToken(nextToken);
+      sessionStorage.setItem('shareAuthToken', nextToken);
+      setPasswordInput('');
+    } catch (err) {
+      setPasswordError(err?.message || 'Mật khẩu không đúng');
+    } finally {
+      setPasswordSubmitting(false);
+    }
+  }, [passwordInput, token]);
 
   // ── Render: Loading ───────────────────────────────────────────────────────
   if (loadingPage) return <SharePageSkeleton />;
@@ -1184,6 +1248,51 @@ export default function SharePage() {
 
   const { file, owner, isDownloadAllowed, expiresAt, hasPassword } = shareData;
   const isFolder = file.type === 'folder';
+  const previewDisabledByOwner = !isFolder && shareData.isPreviewOnly === false && isDownloadAllowed === true;
+  const requiresPassword = Boolean(hasPassword) && !shareAuthToken;
+
+  if (requiresPassword) {
+    return (
+      <div className="min-h-screen bg-[#0f1117] text-white flex items-center justify-center px-4">
+        <div className="w-full max-w-md rounded-2xl border border-white/10 bg-white/[0.03] p-6 shadow-2xl">
+          <div className="mb-6 flex items-center justify-center text-indigo-400">
+            <svg className="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-semibold text-center mb-2">Liên kết có mật khẩu</h1>
+          <p className="text-sm text-white/60 text-center mb-6">
+            Vui lòng nhập mật khẩu để xem trước, tải xuống hoặc duyệt thư mục chia sẻ.
+          </p>
+          <form onSubmit={handleVerifyPassword} className="space-y-4">
+            <div>
+              <label className="mb-2 block text-xs uppercase tracking-[0.2em] text-white/40">Mật khẩu</label>
+              <input
+                type="password"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                placeholder="Nhập mật khẩu liên kết"
+                className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2.5 text-sm text-white outline-none ring-0 placeholder:text-white/25 focus:border-indigo-500"
+                autoFocus
+              />
+            </div>
+            {passwordError && (
+              <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+                {passwordError}
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={passwordSubmitting}
+              className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
+            >
+              {passwordSubmitting ? 'Đang xác thực…' : 'Mở liên kết'}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
@@ -1283,6 +1392,7 @@ export default function SharePage() {
             rootFolderName={file.name}
             isDownloadAllowed={isDownloadAllowed}
             onOpenFile={handleOpenChildFile}
+            shareAuthToken={shareAuthToken}
           />
         ) : (
           /* ── FILE: Preview Panel ─────────────────────────────────────────── */
@@ -1302,8 +1412,19 @@ export default function SharePage() {
                 </button>
               )}
             </div>
+            {previewDisabledByOwner && (
+              <div className="mx-5 mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                Chủ sở hữu đã tắt tính năng xem trước tệp này. Vui lòng bấm 'Tải về' để xem nội dung.
+              </div>
+            )}
             <div className="p-4 sm:p-6">
-              <PreviewArea file={file} previewUrl={previewUrl} loadingPreview={loadingPreview} previewBlocked={previewBlocked} />
+              <PreviewArea
+                file={file}
+                previewUrl={previewUrl}
+                loadingPreview={loadingPreview}
+                previewBlocked={previewBlocked}
+                previewDisabledByOwner={previewDisabledByOwner}
+              />
             </div>
           </section>
         )}
@@ -1316,6 +1437,7 @@ export default function SharePage() {
             loading={childPreviewLoading}
             error={childPreviewError}
             previewBlocked={childPreviewBlocked}
+            previewDisabledByOwner={previewDisabledByOwner}
             isDownloadAllowed={isDownloadAllowed}
             onDownload={handleDownloadChild}
             onClose={() => {

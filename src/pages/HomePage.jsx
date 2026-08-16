@@ -1,21 +1,112 @@
 import { useFiles } from '../context/FileContext';
 import FileSkeleton from '../components/common/FileSkeleton';
+import { getFileIcon } from '../utils/getFileIcon';
 import {
     HardDrive,
     Clock,
     Users,
     ArrowRight,
-    Folder,
-    FileText,
-    FileSpreadsheet,
-    Image,
-    File,
-    Star,
     MoreVertical,
     List,
     LayoutGrid,
-    Home
+    Home,
+    File
 } from 'lucide-react';
+
+// Compact Section Table Component (List Mode)
+const SectionTable = ({ itemList, emptyMessage = "Không có mục nào", onPreview }) => {
+    if (itemList.length === 0) {
+        return <p className="text-xs text-gray-400 py-3 italic">{emptyMessage}</p>;
+    }
+
+    return (
+        <div className="w-full divide-y divide-gray-100 text-sm">
+            {itemList.map((item) => (
+                <div
+                    key={item.id}
+                    onClick={() => onPreview && onPreview(item)}
+                    className="flex items-center justify-between py-2.5 px-3 hover:bg-gray-50/80 transition-colors cursor-pointer rounded-md"
+                >
+                    {/* Name & Icon */}
+                    <div className="flex items-center gap-3 flex-1 min-w-0 pr-4">
+                        {(() => {
+                            try {
+                                return getFileIcon(item);
+                            } catch (e) {
+                                return <File className="w-4 h-4 text-gray-400 shrink-0" />;
+                            }
+                        })()}
+                        <span className="font-medium text-gray-800 truncate hover:text-blue-600">
+                            {item.name}
+                        </span>
+                    </div>
+
+                    {/* Owner */}
+                    <div className="text-xs text-gray-500 w-32 hidden sm:block truncate">
+                        {item.owner || 'Tôi'}
+                    </div>
+
+                    {/* Updated Date */}
+                    <div className="text-xs text-gray-500 w-36 hidden md:block text-right pr-4">
+                        {item.updatedAt}
+                    </div>
+
+                    {/* Action */}
+                    <button
+                        onClick={(e) => { e.stopPropagation(); }}
+                        className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-200/50"
+                    >
+                        <MoreVertical className="w-4 h-4" />
+                    </button>
+                </div>
+            ))}
+        </div>
+    );
+};
+
+// Compact Section Grid Component (Grid Mode)
+const SectionGrid = ({ itemList, emptyMessage = "Không có mục nào", onPreview }) => {
+    if (itemList.length === 0) {
+        return <p className="text-xs text-gray-400 py-3 italic">{emptyMessage}</p>;
+    }
+
+    return (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 py-2">
+            {itemList.map((item) => (
+                <div
+                    key={item.id}
+                    onClick={() => onPreview && onPreview(item)}
+                    className="bg-white border border-gray-200/80 rounded-xl p-3 hover:shadow-md hover:border-blue-300 transition-all cursor-pointer flex flex-col justify-between group h-32"
+                >
+                    <div className="flex items-center justify-between">
+                        {(() => {
+                            try {
+                                return getFileIcon(item);
+                            } catch (e) {
+                                return <File className="w-4 h-4 text-gray-400 shrink-0" />;
+                            }
+                        })()}
+                        <button
+                            onClick={(e) => { e.stopPropagation(); }}
+                            className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                            <MoreVertical className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
+
+                    <div>
+                        <p className="text-xs font-semibold text-gray-800 truncate group-hover:text-blue-600">
+                            {item.name}
+                        </p>
+                        <p className="text-[10px] text-gray-400 mt-0.5 truncate">
+                            {item.owner || 'Tôi'} • {item.updatedAt ? item.updatedAt.split(',')[0] : ''}
+                        </p>
+                    </div>
+                </div>
+            ))}
+        </div>
+    );
+};
 
 export default function HomePage() {
     const { items, setActiveTab, isLoading, viewMode, setViewMode, openPreview } = useFiles();
@@ -37,98 +128,6 @@ export default function HomePage() {
         .filter(item => !item.isTrash && !item.isSpam && item.isSharedWithMe)
         .slice(0, 6);
 
-    const getFileIcon = (item) => {
-        if (item.type === 'folder') return <Folder className="w-5 h-5 text-amber-500 fill-amber-100 shrink-0" />;
-        const name = (item.name || '').toLowerCase();
-        if (name.endsWith('.pdf')) return <FileText className="w-5 h-5 text-rose-500 shrink-0" />;
-        if (name.endsWith('.xlsx')) return <FileSpreadsheet className="w-5 h-5 text-emerald-600 shrink-0" />;
-        if (name.endsWith('.png') || name.endsWith('.jpg')) return <Image className="w-5 h-5 text-purple-500 shrink-0" />;
-        return <File className="w-5 h-5 text-gray-500 shrink-0" />;
-    };
-
-    // Compact Section Table Component (List Mode)
-    const SectionTable = ({ itemList, emptyMessage = "Không có mục nào" }) => {
-        if (itemList.length === 0) {
-            return <p className="text-xs text-gray-400 py-3 italic">{emptyMessage}</p>;
-        }
-
-        return (
-            <div className="w-full divide-y divide-gray-100 text-sm">
-                {itemList.map((item) => (
-                    <div
-                        key={item.id}
-                        onClick={() => openPreview && openPreview(item)}
-                        className="flex items-center justify-between py-2.5 px-3 hover:bg-gray-50/80 transition-colors cursor-pointer rounded-md"
-                    >
-                        {/* Name & Icon */}
-                        <div className="flex items-center gap-3 flex-1 min-w-0 pr-4">
-                            {getFileIcon(item)}
-                            <span className="font-medium text-gray-800 truncate hover:text-blue-600">
-                                {item.name}
-                            </span>
-                        </div>
-
-                        {/* Owner */}
-                        <div className="text-xs text-gray-500 w-32 hidden sm:block truncate">
-                            {item.owner || 'Tôi'}
-                        </div>
-
-                        {/* Updated Date */}
-                        <div className="text-xs text-gray-500 w-36 hidden md:block text-right pr-4">
-                            {item.updatedAt}
-                        </div>
-
-                        {/* Action */}
-                        <button
-                            onClick={(e) => { e.stopPropagation(); }}
-                            className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-200/50"
-                        >
-                            <MoreVertical className="w-4 h-4" />
-                        </button>
-                    </div>
-                ))}
-            </div>
-        );
-    };
-
-    // Compact Section Grid Component (Grid Mode)
-    const SectionGrid = ({ itemList, emptyMessage = "Không có mục nào" }) => {
-        if (itemList.length === 0) {
-            return <p className="text-xs text-gray-400 py-3 italic">{emptyMessage}</p>;
-        }
-
-        return (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 py-2">
-                {itemList.map((item) => (
-                    <div
-                        key={item.id}
-                        onClick={() => openPreview && openPreview(item)}
-                        className="bg-white border border-gray-200/80 rounded-xl p-3 hover:shadow-md hover:border-blue-300 transition-all cursor-pointer flex flex-col justify-between group h-32"
-                    >
-                        <div className="flex items-center justify-between">
-                            {getFileIcon(item)}
-                            <button
-                                onClick={(e) => { e.stopPropagation(); }}
-                                className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                                <MoreVertical className="w-3.5 h-3.5" />
-                            </button>
-                        </div>
-
-                        <div>
-                            <p className="text-xs font-semibold text-gray-800 truncate group-hover:text-blue-600">
-                                {item.name}
-                            </p>
-                            <p className="text-[10px] text-gray-400 mt-0.5 truncate">
-                                {item.owner || 'Tôi'} • {item.updatedAt ? item.updatedAt.split(',')[0] : ''}
-                            </p>
-                        </div>
-                    </div>
-                ))}
-            </div>
-        );
-    };
-
     if (isLoading) {
         return (
             <div className="space-y-6">
@@ -146,15 +145,13 @@ export default function HomePage() {
 
     return (
         <div className="flex flex-col h-full space-y-7 overflow-y-auto pr-1">
-
-            {/* Header Toolbar với Nút chuyển đổi View Switcher */}
+            {/* Header Toolbar */}
             <div className="flex items-center justify-between pb-2 border-b border-gray-100">
                 <div className="flex items-center gap-2">
                     <Home className="w-6 h-6 text-blue-600" />
                     <h1 className="text-xl font-bold text-gray-800">Trang chủ</h1>
                 </div>
 
-                {/* View Switcher Toggle */}
                 <div className="flex items-center bg-gray-100 rounded-full p-1 border border-gray-200">
                     <button
                         onClick={() => setViewMode('list')}
@@ -179,7 +176,7 @@ export default function HomePage() {
                 </div>
             </div>
 
-            {/* SECTION 1: MỤC CỦA TÔI (MY DRIVE - TOP 5-6) */}
+            {/* SECTION 1: MY DRIVE */}
             <section className="space-y-2">
                 <div className="flex items-center justify-between pb-1 border-b border-gray-200">
                     <div className="flex items-center gap-2">
@@ -195,13 +192,13 @@ export default function HomePage() {
                     </button>
                 </div>
                 {viewMode === 'grid' ? (
-                    <SectionGrid itemList={myDriveItems} emptyMessage="Chưa có tệp nào trong Driver riêng của tôi." />
+                    <SectionGrid itemList={myDriveItems} emptyMessage="Chưa có tệp nào trong Driver riêng của tôi." onPreview={openPreview} />
                 ) : (
-                    <SectionTable itemList={myDriveItems} emptyMessage="Chưa có tệp nào trong Driver riêng của tôi." />
+                    <SectionTable itemList={myDriveItems} emptyMessage="Chưa có tệp nào trong Driver riêng của tôi." onPreview={openPreview} />
                 )}
             </section>
 
-            {/* SECTION 2: ĐÃ MỞ GẦN ĐÂY (RECENT - TOP 5-6) */}
+            {/* SECTION 2: RECENT */}
             <section className="space-y-2">
                 <div className="flex items-center justify-between pb-1 border-b border-gray-200">
                     <div className="flex items-center gap-2">
@@ -217,13 +214,13 @@ export default function HomePage() {
                     </button>
                 </div>
                 {viewMode === 'grid' ? (
-                    <SectionGrid itemList={recentItems} emptyMessage="Chưa có tệp nào mở gần đây." />
+                    <SectionGrid itemList={recentItems} emptyMessage="Chưa có tệp nào mở gần đây." onPreview={openPreview} />
                 ) : (
-                    <SectionTable itemList={recentItems} emptyMessage="Chưa có tệp nào mở gần đây." />
+                    <SectionTable itemList={recentItems} emptyMessage="Chưa có tệp nào mở gần đây." onPreview={openPreview} />
                 )}
             </section>
 
-            {/* SECTION 3: ĐƯỢC CHIA SẺ VỚI TÔI (SHARED WITH ME - TOP 5-6) */}
+            {/* SECTION 3: SHARED WITH ME */}
             <section className="space-y-2">
                 <div className="flex items-center justify-between pb-1 border-b border-gray-200">
                     <div className="flex items-center gap-2">
@@ -239,13 +236,11 @@ export default function HomePage() {
                     </button>
                 </div>
                 {viewMode === 'grid' ? (
-                    <SectionGrid itemList={sharedItems} emptyMessage="Chưa có tệp nào được chia sẻ với bạn." />
+                    <SectionGrid itemList={sharedItems} emptyMessage="Chưa có tệp nào được chia sẻ với bạn." onPreview={openPreview} />
                 ) : (
-                    <SectionTable itemList={sharedItems} emptyMessage="Chưa có tệp nào được chia sẻ với bạn." />
+                    <SectionTable itemList={sharedItems} emptyMessage="Chưa có tệp nào được chia sẻ với bạn." onPreview={openPreview} />
                 )}
             </section>
-
         </div>
     );
 }
-

@@ -82,6 +82,19 @@ export default function ShareModal({ isOpen, item, onClose }) {
 
     if (!isOpen || !item) return null;
 
+    const calculateExpiresInDays = (dateString) => {
+        if (!dateString) return undefined;
+
+        const target = new Date(`${dateString}T23:59:59.999`);
+        if (Number.isNaN(target.getTime())) return undefined;
+
+        const now = new Date();
+        const diffMs = target.getTime() - now.getTime();
+        const diffDays = Math.ceil(diffMs / 86400000);
+
+        return diffDays > 0 ? diffDays : undefined;
+    };
+
     const handleAddMember = async (e) => {
         e.preventDefault();
         if (!email.trim()) return;
@@ -123,10 +136,17 @@ export default function ShareModal({ isOpen, item, onClose }) {
     };
 
     const handleCopyLink = async () => {
+        const expiresInDays = calculateExpiresInDays(expireDate);
+
+        if (expireDate && expiresInDays === undefined) {
+            setErrorMsg('Ngày hết hạn phải là một ngày trong tương lai.');
+            return;
+        }
+
         try {
             const res = await sharingApi.createShareLink(item.id, {
                 password: sharePassword || undefined,
-                expiresInDays: expireDate ? 7 : undefined,
+                expiresInDays,
                 isDownloadAllowed: allowDownload,
                 isPreviewOnly: previewOnly,
             });
@@ -289,6 +309,7 @@ export default function ShareModal({ isOpen, item, onClose }) {
                                 <input
                                     type="date"
                                     value={expireDate}
+                                    min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
                                     onChange={(e) => setExpireDate(e.target.value)}
                                     className="w-full bg-transparent text-gray-100 outline-none text-xs"
                                 />

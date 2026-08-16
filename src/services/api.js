@@ -179,15 +179,26 @@ export const chunkedApi = {
 export const sharingApi = {
   /** Lấy thông tin tệp qua token chia sẻ (không cần đăng nhập) */
   getSharedItem: (token) => api.get(`/shares/${token}`),
+  /** Xác thực mật khẩu cho link chia sẻ công khai */
+  verifySharePassword: (token, password) => api.post(`/shares/${token}/verify-password`, { password }),
   /** Sinh presigned preview URL (inline) qua token chia sẻ */
-  getSharedPreviewUrl: (token, fileId) =>
-    api.get(`/shares/${token}/preview-url`, { params: fileId ? { fileId } : {} }),
+  getSharedPreviewUrl: (token, fileId, authToken) =>
+    api.get(`/shares/${token}/preview-url`, {
+      params: fileId ? { fileId } : {},
+      headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+    }),
   /** Sinh presigned download URL qua token chia sẻ */
-  getSharedDownloadUrl: (token, fileId) =>
-    api.get(`/shares/${token}/download-url`, { params: fileId ? { fileId } : {} }),
+  getSharedDownloadUrl: (token, fileId, authToken) =>
+    api.get(`/shares/${token}/download-url`, {
+      params: fileId ? { fileId } : {},
+      headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+    }),
   /** Lấy danh sách file/folder con trong thư mục được chia sẻ (không cần đăng nhập) */
-  getSharedChildren: (token, folderId) =>
-    api.get(`/shares/${token}/children`, { params: folderId ? { folderId } : {} }),
+  getSharedChildren: (token, folderId, authToken) =>
+    api.get(`/shares/${token}/children`, {
+      params: folderId ? { folderId } : {},
+      headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+    }),
   /** Tạo link chia sẻ công khai cho một tệp (yêu cầu đăng nhập) */
   createShareLink: (id, data) => api.post(`/files/${id}/share`, data),
   /** Lấy danh sách người được chia sẻ trực tiếp (yêu cầu đăng nhập) */

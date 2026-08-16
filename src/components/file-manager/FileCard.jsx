@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { storageApi } from '../../services/api';
 import { formatBytes } from '../../utils/formatFileSize';
 import * as XLSX from 'xlsx';
@@ -83,6 +83,13 @@ const fileTypeStyles = {
         previewBg: 'bg-blue-500/10 text-blue-700',
         label: 'Document'
     },
+    markdown: {
+        bg: 'bg-indigo-50 hover:bg-indigo-100 border-indigo-200',
+        badgeBg: 'bg-indigo-100 text-indigo-700',
+        icon: <FileCode className="w-5 h-5 text-indigo-600 shrink-0" />,
+        previewBg: 'bg-indigo-500/10 text-indigo-700',
+        label: 'Markdown'
+    },
     archive: {
         bg: 'bg-amber-50 hover:bg-amber-100 border-amber-200',
         badgeBg: 'bg-amber-100 text-amber-700',
@@ -115,7 +122,8 @@ function getFileTypeCategory(name = '') {
     if (/\.(mp3|wav|flac|ogg|m4a)$/i.test(n)) return 'audio';
     if (/\.(sql|db|sqlite)$/i.test(n)) return 'database';
     if (n.endsWith('.fig')) return 'figma';
-    if (/\.(docx|doc|txt|pptx|md|markdown|log|env|conf|ini)$/i.test(n)) return 'doc';
+    if (/\.(md|markdown)$/i.test(n)) return 'markdown';
+    if (/\.(docx|doc|txt|pptx|log|env|conf|ini)$/i.test(n)) return 'doc';
     if (/\.(zip|rar|7z|tar|gz)$/i.test(n)) return 'archive';
     // Danh sách mở rộng toàn bộ các file code
     if (/\.(js|jsx|ts|tsx|py|java|c|cpp|h|hpp|cs|go|rb|php|sh|bash|zsh|json|xml|yaml|yml|toml|css|scss|sass|html|htm|vue|svelte|kt|swift|rs|dart|lua|prisma|graphql)$/i.test(n)) {
@@ -127,7 +135,7 @@ function getFileTypeCategory(name = '') {
 // Giới hạn dung lượng để tải thumbnail: 10MB
 const MAX_THUMBNAIL_SIZE = 10 * 1024 * 1024;
 
-export default function FileCard({ file, onDoubleClick, onContextMenu, onStarToggle, onOpenInfo, isSelected, isCut = false, onToggleSelect, onSelectRange }) {
+function FileCard({ file, onDoubleClick, onContextMenu, onStarToggle, onOpenInfo, isSelected, isCut = false, onToggleSelect, onSelectRange }) {
     const cat = getFileTypeCategory(file?.name);
     const style = fileTypeStyles[cat] || fileTypeStyles.default;
 
@@ -227,8 +235,12 @@ export default function FileCard({ file, onDoubleClick, onContextMenu, onStarTog
                 } catch { /* fallback icon */ }
             })();
 
-        // ── TXT / MD: gọi getFileTextContent (backend đã trả text sẵn) ──
-        } else if (cat === 'doc' && (n.endsWith('.txt') || n.endsWith('.md') || n.endsWith('.markdown') || n.endsWith('.log') || n.endsWith('.env') || n.endsWith('.conf') || n.endsWith('.ini'))) {
+        // ── Markdown: text preview riêng ──
+        } else if (cat === 'markdown') {
+            setThumbType('markdown');
+
+        // ── TXT / LOG / ENV / CONF / INI: text preview ──
+        } else if (cat === 'doc' && (n.endsWith('.txt') || n.endsWith('.log') || n.endsWith('.env') || n.endsWith('.conf') || n.endsWith('.ini'))) {
             storageApi.getFileTextContent(file.id)
                 .then(res => {
                     if (isMounted && res?.content) {
@@ -358,6 +370,16 @@ export default function FileCard({ file, onDoubleClick, onContextMenu, onStarTog
                         </table>
                     </div>
 
+                ) : thumbType === 'markdown' ? (
+                    <div className="w-full h-full rounded-lg flex flex-col items-center justify-center gap-1.5 bg-linear-to-br from-indigo-50/80 to-purple-50/60 dark:from-indigo-950/30 dark:to-purple-950/20">
+                        <div className="p-1.5 rounded-lg bg-white dark:bg-gray-800 shadow-sm border border-indigo-100 dark:border-indigo-900/50">
+                            <FileCode className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                        </div>
+                        <span className="text-[8px] font-mono font-bold tracking-[0.2em] px-1.5 py-0.5 rounded-md bg-indigo-100/80 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">
+                            MARKDOWN
+                        </span>
+                    </div>
+
                 ) : thumbType === 'text' && textContent ? (
                     /* ── Text / Code / JSON / DOCX ── */
                     <div className={`w-full h-full rounded-lg p-2 overflow-hidden ${style.previewBg}`}>
@@ -392,3 +414,5 @@ export default function FileCard({ file, onDoubleClick, onContextMenu, onStarTog
         </div>
     );
 }
+
+export default memo(FileCard);

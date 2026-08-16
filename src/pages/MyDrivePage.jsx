@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { useFiles } from '../context/FileContext';
 import { useUpload } from '../context/UploadContext';
 import FileListView from '../components/file-manager/FileListView';
@@ -6,7 +6,7 @@ import FileGridView from '../components/file-manager/FileGridView';
 import FileFilterBar from '../components/common/FileFilterBar';
 import UploadProgress from '../components/file-manager/UploadProgress';
 import Breadcrumb from '../components/file-manager/Breadcrumb';
-import { List, LayoutGrid, ChevronRight, UploadCloud, FolderInput, Loader2 } from 'lucide-react';
+import { List, LayoutGrid, UploadCloud, FolderInput, Loader2 } from 'lucide-react';
 
 export default function MyDrivePage() {
   const {
@@ -42,7 +42,6 @@ export default function MyDrivePage() {
 
 
   const [isDragging, setIsDragging] = useState(false);
-  const fileInputRef = useRef(null);
 
   const currentFolder = items.find((i) => i.id === currentFolderId);
 
@@ -72,15 +71,6 @@ export default function MyDrivePage() {
     }
   };
 
-  const handleFileSelect = (e) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const selectedFiles = Array.from(e.target.files);
-      selectedFiles.forEach((file) => {
-        uploadFile(file);
-      });
-    }
-  };
-
   return (
     <div
       onDragOver={handleDragOver}
@@ -88,9 +78,6 @@ export default function MyDrivePage() {
       onDrop={handleDrop}
       className="flex flex-col h-full relative"
     >
-      {/* Hidden file input */}
-      <input type="file" ref={fileInputRef} onChange={handleFileSelect} multiple className="hidden" />
-
       {/* Drag & Drop Visual Overlay */}
       {isDragging && (
         <div className="absolute inset-0 bg-blue-600/10 border-4 border-dashed border-blue-500 rounded-3xl z-40 backdrop-blur-xs flex flex-col items-center justify-center p-6 text-center pointer-events-none animate-pulse">
@@ -125,14 +112,6 @@ export default function MyDrivePage() {
               <span>Dán ({clipboard.items.length})</span>
             </button>
           )}
-
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full text-xs font-bold shadow-xs transition-colors cursor-pointer"
-          >
-            <UploadCloud className="w-4 h-4" />
-            <span>Tải tệp lên</span>
-          </button>
 
           <div className="flex items-center bg-gray-100 rounded-full p-1 border border-gray-200">
             <button
