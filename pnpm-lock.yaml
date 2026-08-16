@@ -20,6 +20,9 @@ importers:
       mammoth:
         specifier: ^1.12.1
         version: 1.12.1
+      marked:
+        specifier: ^18.0.9
+        version: 18.0.9
       pdfjs-dist:
         specifier: ^6.2.108
         version: 6.2.108
@@ -1113,6 +1116,11 @@ packages:
   mammoth@1.12.1:
     resolution: {integrity: sha512-nCH9KKjWi3jQ+i8bUKs7k1yrXtSEGpWgF8IYkzsFMcbn+5S6l4bZEBbyx2hOQErFiXPuAs9RPa6qjXVxhyx/8g==}
     engines: {node: '>=12.0.0'}
+    hasBin: true
+
+  marked@18.0.9:
+    resolution: {integrity: sha512-/Sa4qiiHZxf0/FQdBBowr9q4r10krCwMvpK48FUBdXdUXScDxiQGR9zCPrFgRVR5LU3iySOiIjy09ZQvADir1w==}
+    engines: {node: '>= 20'}
     hasBin: true
 
   math-intrinsics@1.1.0:
@@ -2359,6 +2367,8 @@ snapshots:
       path-is-absolute: 1.0.1
       underscore: 1.13.8
       xmlbuilder: 10.1.1
+
+  marked@18.0.9: {}
 
   math-intrinsics@1.1.0: {}
 

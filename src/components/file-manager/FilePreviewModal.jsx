@@ -19,6 +19,7 @@ import {
 import { useFiles } from '../../context/FileContext';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { marked } from 'marked';
 import mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist';
 
@@ -272,7 +273,8 @@ export default function FilePreviewModal({ item, onClose }) {
   const isVideo = mime.startsWith('video/') || /\.(mp4|webm|mov|mkv)$/i.test(item.name);
   const isAudio = mime.startsWith('audio/') || /\.(mp3|wav|ogg|m4a)$/i.test(item.name);
   const isPdf = mime.includes('pdf') || /\.pdf$/i.test(item.name);
-  const isCodeOrText = (mime.startsWith('text/') || /\.(js|jsx|ts|tsx|py|html|css|json|sql|md|txt|xml|yaml|yml|sh|env|conf|log|c|cpp|h|hpp|java|go|rs|kt|php|vue|svelte|cs)$/i.test(item.name)) && Number(item.sizeBytes) <= 5 * 1024 * 1024;
+  const isMd = /\.(md|markdown)$/i.test(item.name) || mime === 'text/markdown';
+  const isCodeOrText = (isMd || mime.startsWith('text/') || /\.(js|jsx|ts|tsx|py|html|css|json|sql|txt|xml|yaml|yml|sh|env|conf|log|c|cpp|h|hpp|java|go|rs|kt|php|vue|svelte|cs)$/i.test(item.name)) && Number(item.sizeBytes) <= 5 * 1024 * 1024;
   const isDocx = (
     mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
     mime === 'application/msword' ||
@@ -280,6 +282,9 @@ export default function FilePreviewModal({ item, onClose }) {
   ) && Number(item.sizeBytes) <= 8 * 1024 * 1024;
 
   const [copied, setCopied] = useState(false);
+  const [textContent, setTextContent] = useState(null);
+  const [textLoading, setTextLoading] = useState(false);
+  const [mdViewMode, setMdViewMode] = useState('preview'); // 'preview' | 'source'
 
   const handleCopyText = () => {
     if (textContent) {
@@ -289,17 +294,54 @@ export default function FilePreviewModal({ item, onClose }) {
     }
   };
 
-  const [textContent, setTextContent] = useState(null);
-
   useEffect(() => {
     if (isCodeOrText && item) {
+      let isMounted = true;
+      setTextLoading(true);
+      setTextContent(null);
+      setMdViewMode('preview');
+
       getFileTextContent(item.id)
         .then((text) => {
-          setTextContent(text?.content || text || 'Không thể tải nội dung tệp văn bản');
+          if (!isMounted) return;
+          const content = text?.content !== undefined ? text.content : (typeof text === 'string' ? text : '');
+          if (content && !content.startsWith('// Không thể tải trực tiếp') && !content.startsWith('// Lỗi khi đọc')) {
+            setTextContent(content);
+          } else if (url) {
+            fetch(url)
+              .then((r) => (r.ok ? r.text() : Promise.reject()))
+              .then((fetched) => {
+                if (isMounted) setTextContent(fetched);
+              })
+              .catch(() => {
+                if (isMounted) setTextContent(content || 'Không thể tải nội dung tệp');
+              });
+          } else {
+            setTextContent(content || 'Không thể tải nội dung tệp');
+          }
         })
-        .catch(() => setTextContent('Không thể tải nội dung tệp văn bản/mã nguồn'));
+        .catch(async () => {
+          if (url) {
+            try {
+              const res = await fetch(url);
+              if (res.ok) {
+                const text = await res.text();
+                if (isMounted) setTextContent(text);
+                return;
+              }
+            } catch {}
+          }
+          if (isMounted) setTextContent('Không thể tải nội dung tệp văn bản / mã nguồn');
+        })
+        .finally(() => {
+          if (isMounted) setTextLoading(false);
+        });
+
+      return () => {
+        isMounted = false;
+      };
     }
-  }, [isCodeOrText, item]);
+  }, [isCodeOrText, item, url]);
 
   const [docxHtml, setDocxHtml] = useState(null);
   const [docxLoading, setDocxLoading] = useState(false);
@@ -557,44 +599,83 @@ export default function FilePreviewModal({ item, onClose }) {
             {isCodeOrText && (
               <div className="w-full h-full max-w-5xl rounded-2xl overflow-hidden bg-[#0d1117] border border-white/10 shadow-2xl flex flex-col">
                 <div className="px-4 py-2.5 bg-slate-900 border-b border-white/10 text-xs font-mono text-slate-400 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
-                    <span className="font-semibold text-slate-200">{item.name}</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={`w-2.5 h-2.5 rounded-full inline-block shrink-0 ${isMd ? 'bg-sky-400' : 'bg-emerald-500'}`} />
+                    <span className="font-semibold text-slate-200 truncate">{item.name}</span>
+                    {isMd && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 font-mono hidden sm:inline-block">
+                        Markdown
+                      </span>
+                    )}
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                    {isMd && (
+                      <div className="flex items-center bg-slate-800 p-0.5 rounded-lg border border-white/10">
+                        <button
+                          onClick={() => setMdViewMode('preview')}
+                          className={`px-2 py-1 rounded text-[11px] font-sans font-medium transition-colors cursor-pointer ${
+                            mdViewMode === 'preview' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          Xem trước
+                        </button>
+                        <button
+                          onClick={() => setMdViewMode('source')}
+                          className={`px-2 py-1 rounded text-[11px] font-sans font-medium transition-colors cursor-pointer ${
+                            mdViewMode === 'source' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          Mã nguồn
+                        </button>
+                      </div>
+                    )}
                     <button
                       onClick={handleCopyText}
-                      className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[11px] font-semibold text-slate-200 transition-colors"
+                      className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[11px] font-sans font-semibold text-slate-200 transition-colors cursor-pointer"
                     >
-                      {copied ? '✓ Đã sao chép' : 'Sao chép mã'}
+                      {copied ? '✓ Đã sao chép' : 'Sao chép'}
                     </button>
-                    <span>UTF-8 • {formatBytes(item.sizeBytes)}</span>
+                    <span className="hidden sm:inline">UTF-8 • {formatBytes(item.sizeBytes)}</span>
                   </div>
                 </div>
                 <div className="flex-1 overflow-auto text-xs text-slate-200 selection:bg-blue-500/40">
-                  {textContent ? (
-                    <SyntaxHighlighter
-                      language={(() => {
-                        const ext = item?.name?.split('.').pop()?.toLowerCase();
-                        const map = {
-                          js: 'javascript', jsx: 'jsx', ts: 'typescript', tsx: 'tsx',
-                          py: 'python', json: 'json', html: 'html', css: 'css',
-                          sql: 'sql', md: 'markdown', sh: 'bash', bash: 'bash',
-                          java: 'java', go: 'go', rs: 'rust', c: 'c', cpp: 'cpp',
-                          cs: 'csharp', php: 'php', xml: 'xml', yaml: 'yaml', yml: 'yaml',
-                          env: 'bash', txt: 'text'
-                        };
-                        return map[ext] || 'text';
-                      })()}
-                      style={vscDarkPlus}
-                      showLineNumbers={true}
-                      customStyle={{ margin: 0, padding: '1rem', background: 'transparent', minHeight: '100%' }}
-                      wrapLines={true}
-                    >
-                      {textContent}
-                    </SyntaxHighlighter>
+                  {textLoading ? (
+                    <div className="flex flex-col items-center justify-center gap-3 text-slate-400 py-20">
+                      <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                      <p className="text-sm font-medium">Đang tải nội dung...</p>
+                    </div>
+                  ) : textContent ? (
+                    isMd && mdViewMode === 'preview' ? (
+                      <div
+                        className="p-6 sm:p-10 max-w-4xl mx-auto markdown-preview-content"
+                        dangerouslySetInnerHTML={{
+                          __html: marked.parse(textContent, { breaks: true, gfm: true })
+                        }}
+                      />
+                    ) : (
+                      <SyntaxHighlighter
+                        language={(() => {
+                          const ext = item?.name?.split('.').pop()?.toLowerCase();
+                          const map = {
+                            js: 'javascript', jsx: 'jsx', ts: 'typescript', tsx: 'tsx',
+                            py: 'python', json: 'json', html: 'html', css: 'css',
+                            sql: 'sql', md: 'markdown', markdown: 'markdown', sh: 'bash', bash: 'bash',
+                            java: 'java', go: 'go', rs: 'rust', c: 'c', cpp: 'cpp',
+                            cs: 'csharp', php: 'php', xml: 'xml', yaml: 'yaml', yml: 'yaml',
+                            env: 'bash', txt: 'text'
+                          };
+                          return map[ext] || 'text';
+                        })()}
+                        style={vscDarkPlus}
+                        showLineNumbers={true}
+                        customStyle={{ margin: 0, padding: '1rem', background: 'transparent', minHeight: '100%' }}
+                        wrapLines={true}
+                      >
+                        {textContent}
+                      </SyntaxHighlighter>
+                    )
                   ) : (
-                    <div className="text-slate-400 p-4 font-mono">Đang nạp mã nguồn từ đám mây...</div>
+                    <div className="text-slate-400 p-6 font-mono text-center">Không có nội dung văn bản</div>
                   )}
                 </div>
               </div>

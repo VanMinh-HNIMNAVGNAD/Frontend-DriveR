@@ -5,6 +5,7 @@ import { formatBytes } from '../utils/formatFileSize';
 import * as pdfjsLib from 'pdfjs-dist';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { marked } from 'marked';
 import mammoth from 'mammoth';
 
 // ─── Khởi tạo PDF.js Worker (an toàn, không trùng lặp) ───────────────────────
@@ -333,6 +334,9 @@ function CodeTextPreview({ url, name }) {
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(false);
   const [copied, setCopied]   = useState(false);
+  const [mdViewMode, setMdViewMode] = useState('preview'); // 'preview' | 'source'
+
+  const isMd = /\.(md|markdown)$/i.test(name ?? '');
 
   useEffect(() => {
     let cancelled = false;
@@ -384,7 +388,7 @@ function CodeTextPreview({ url, name }) {
   const langMap = {
     js: 'javascript', jsx: 'jsx', ts: 'typescript', tsx: 'tsx',
     py: 'python', json: 'json', html: 'html', css: 'css',
-    sql: 'sql', md: 'markdown', sh: 'bash', bash: 'bash',
+    sql: 'sql', md: 'markdown', markdown: 'markdown', sh: 'bash', bash: 'bash',
     java: 'java', go: 'go', rs: 'rust', c: 'c', cpp: 'cpp',
     cs: 'csharp', php: 'php', xml: 'xml', yaml: 'yaml', yml: 'yaml',
     env: 'bash', txt: 'text'
@@ -394,31 +398,83 @@ function CodeTextPreview({ url, name }) {
   return (
     <div className="w-full max-w-5xl mx-auto rounded-xl overflow-hidden border border-white/10 bg-[#0d1117] flex flex-col text-left">
       <div className="flex items-center justify-between px-4 py-2 bg-slate-900 border-b border-white/10 text-xs text-white/60">
-        <span className="font-mono text-white/80">{name}</span>
-        <button
-          onClick={handleCopy}
-          className="px-2.5 py-1 rounded-md bg-white/10 hover:bg-white/20 text-xs text-white transition-colors cursor-pointer"
-        >
-          {copied ? '✓ Đã sao chép' : 'Sao chép mã'}
-        </button>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-mono text-white/80 truncate">{name}</span>
+          {isMd && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 font-mono hidden sm:inline-block">
+              Markdown
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {isMd && (
+            <div className="flex items-center bg-slate-800 p-0.5 rounded-lg border border-white/10">
+              <button
+                onClick={() => setMdViewMode('preview')}
+                className={`px-2 py-1 rounded text-[11px] font-sans font-medium transition-colors cursor-pointer ${
+                  mdViewMode === 'preview' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Xem trước
+              </button>
+              <button
+                onClick={() => setMdViewMode('source')}
+                className={`px-2 py-1 rounded text-[11px] font-sans font-medium transition-colors cursor-pointer ${
+                  mdViewMode === 'source' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Mã nguồn
+              </button>
+            </div>
+          )}
+          <button
+            onClick={handleCopy}
+            className="px-2.5 py-1 rounded-md bg-white/10 hover:bg-white/20 text-xs text-white transition-colors cursor-pointer"
+          >
+            {copied ? '✓ Đã sao chép' : 'Sao chép mã'}
+          </button>
+        </div>
       </div>
       <div className="overflow-auto max-h-[60vh] text-xs font-mono">
-        <SyntaxHighlighter
-          language={language}
-          style={vscDarkPlus}
-          showLineNumbers={true}
-          customStyle={{ margin: 0, padding: '1rem', background: 'transparent' }}
-          wrapLines={true}
-        >
-          {content}
-        </SyntaxHighlighter>
+        {isMd && mdViewMode === 'preview' ? (
+          <div
+            className="p-6 sm:p-8 max-w-4xl mx-auto markdown-preview-content font-sans"
+            dangerouslySetInnerHTML={{
+              __html: marked.parse(content, { breaks: true, gfm: true })
+            }}
+          />
+        ) : (
+          <SyntaxHighlighter
+            language={language}
+            style={vscDarkPlus}
+            showLineNumbers={true}
+            customStyle={{ margin: 0, padding: '1rem', background: 'transparent' }}
+            wrapLines={true}
+          >
+            {content}
+          </SyntaxHighlighter>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RestrictedPreviewNotice({ file, message }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-4 py-16 text-white/30 text-center">
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+        <FileTypeIcon mimeType={file.mimeType} type={file.type} name={file.name} />
+      </div>
+      <div className="space-y-1 max-w-md">
+        <p className="text-sm text-white/80 font-medium">{message}</p>
+        <p className="text-xs text-white/25">Tệp này chỉ cho phép tải xuống từ liên kết chia sẻ.</p>
       </div>
     </div>
   );
 }
 
 // ─── Preview Area (dispatch theo MIME cho file đơn gốc) ───────────────────────
-function PreviewArea({ file, previewUrl, loadingPreview }) {
+function PreviewArea({ file, previewUrl, loadingPreview, previewBlocked }) {
   const { mimeType, name } = file;
 
   if (loadingPreview) {
@@ -431,6 +487,10 @@ function PreviewArea({ file, previewUrl, loadingPreview }) {
         <span className="text-sm">Đang tải bản xem trước…</span>
       </div>
     );
+  }
+
+  if (previewBlocked) {
+    return <RestrictedPreviewNotice file={file} message="Tệp này không cho phép xem trước, vui lòng tải xuống" />;
   }
 
   if (!previewUrl) {
@@ -488,6 +548,7 @@ function ChildFilePreviewModal({
   previewUrl,
   loading,
   error,
+  previewBlocked,
   isDownloadAllowed,
   onDownload,
   onClose,
@@ -650,7 +711,11 @@ function ChildFilePreviewModal({
           </div>
         )}
 
-        {error && !loading && (
+        {previewBlocked && !loading && !error && (
+          <RestrictedPreviewNotice file={file} message="Tệp này không cho phép xem trước, vui lòng tải xuống" />
+        )}
+
+        {error && !loading && !previewBlocked && (
           <div className="max-w-md p-6 bg-red-500/10 border border-red-500/30 rounded-2xl text-center space-y-3">
             <p className="text-sm text-red-300 font-medium">{error}</p>
             {isDownloadAllowed && (
@@ -664,7 +729,7 @@ function ChildFilePreviewModal({
           </div>
         )}
 
-        {!loading && !error && previewUrl && (
+        {!loading && !error && !previewBlocked && previewUrl && (
           <>
             {isImg && (
               <div className="w-full h-full flex items-center justify-center overflow-auto p-4 cursor-grab active:cursor-grabbing">
@@ -739,7 +804,7 @@ function ChildFilePreviewModal({
           </>
         )}
 
-        {!loading && !error && !previewUrl && (
+        {!loading && !error && !previewBlocked && !previewUrl && (
           <div className="p-8 bg-slate-900 border border-white/10 rounded-3xl shadow-2xl flex flex-col items-center gap-4 text-center max-w-sm">
             <svg className="w-16 h-16 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25M9 16.5v.75m3-3v3M15 12v5.25m-4.5-15H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
@@ -972,6 +1037,7 @@ export default function SharePage() {
   const [previewUrl, setPreviewUrl]         = useState(null);
   const [loadingPage, setLoadingPage]       = useState(true);
   const [loadingPreview, setLoadingPreview] = useState(false);
+  const [previewBlocked, setPreviewBlocked] = useState(false);
   const [downloadLoading, setDownloadLoading] = useState(false);
   const [error, setError]                   = useState(null);
 
@@ -979,6 +1045,7 @@ export default function SharePage() {
   const [selectedChild, setSelectedChild]       = useState(null);
   const [childPreviewUrl, setChildPreviewUrl]   = useState(null);
   const [childPreviewLoading, setChildPreviewLoading] = useState(false);
+  const [childPreviewBlocked, setChildPreviewBlocked] = useState(false);
   const [childPreviewError, setChildPreviewError] = useState(null);
 
   // ── Bước 1: Lấy metadata share link ──────────────────────────────────────
@@ -1015,6 +1082,8 @@ export default function SharePage() {
 
     let cancelled = false;
     setLoadingPreview(true);
+    setPreviewBlocked(false);
+    setPreviewUrl(null);
 
     sharingApi.getSharedPreviewUrl(token)
       .then((res) => {
@@ -1023,7 +1092,11 @@ export default function SharePage() {
           setPreviewUrl(url);
         }
       })
-      .catch(() => {}) // Preview không bắt buộc
+      .catch((err) => {
+        if (!cancelled && err?.response?.status === 403) {
+          setPreviewBlocked(true);
+        }
+      }) // Preview không bắt buộc
       .finally(() => { if (!cancelled) setLoadingPreview(false); });
 
     return () => { cancelled = true; };
@@ -1059,6 +1132,7 @@ export default function SharePage() {
     setSelectedChild(childFile);
     setChildPreviewUrl(null);
     setChildPreviewError(null);
+    setChildPreviewBlocked(false);
     setChildPreviewLoading(true);
 
     try {
@@ -1070,7 +1144,11 @@ export default function SharePage() {
         setChildPreviewError('Không thể tạo liên kết xem trước cho tệp này.');
       }
     } catch (err) {
-      setChildPreviewError(err?.message || 'Lỗi khi tải bản xem trước tệp con.');
+      if (err?.response?.status === 403) {
+        setChildPreviewBlocked(true);
+      } else {
+        setChildPreviewError(err?.message || 'Lỗi khi tải bản xem trước tệp con.');
+      }
     } finally {
       setChildPreviewLoading(false);
     }
@@ -1225,7 +1303,7 @@ export default function SharePage() {
               )}
             </div>
             <div className="p-4 sm:p-6">
-              <PreviewArea file={file} previewUrl={previewUrl} loadingPreview={loadingPreview} />
+              <PreviewArea file={file} previewUrl={previewUrl} loadingPreview={loadingPreview} previewBlocked={previewBlocked} />
             </div>
           </section>
         )}
@@ -1237,12 +1315,14 @@ export default function SharePage() {
             previewUrl={childPreviewUrl}
             loading={childPreviewLoading}
             error={childPreviewError}
+            previewBlocked={childPreviewBlocked}
             isDownloadAllowed={isDownloadAllowed}
             onDownload={handleDownloadChild}
             onClose={() => {
               setSelectedChild(null);
               setChildPreviewUrl(null);
               setChildPreviewError(null);
+              setChildPreviewBlocked(false);
             }}
           />
         )}
