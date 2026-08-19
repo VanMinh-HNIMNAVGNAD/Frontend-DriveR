@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 
 // Compact Section Table Component (List Mode)
-const SectionTable = ({ itemList, emptyMessage = "Không có mục nào", onPreview }) => {
+const SectionTable = ({ itemList, emptyMessage = "Không có mục nào", onItemClick }) => {
     if (itemList.length === 0) {
         return <p className="text-xs text-gray-400 py-3 italic">{emptyMessage}</p>;
     }
@@ -24,7 +24,7 @@ const SectionTable = ({ itemList, emptyMessage = "Không có mục nào", onPrev
             {itemList.map((item) => (
                 <div
                     key={item.id}
-                    onClick={() => onPreview && onPreview(item)}
+                    onClick={() => onItemClick && onItemClick(item)}
                     className="flex items-center justify-between py-2.5 px-3 hover:bg-gray-50/80 transition-colors cursor-pointer rounded-md"
                 >
                     {/* Name & Icon */}
@@ -65,7 +65,7 @@ const SectionTable = ({ itemList, emptyMessage = "Không có mục nào", onPrev
 };
 
 // Compact Section Grid Component (Grid Mode)
-const SectionGrid = ({ itemList, emptyMessage = "Không có mục nào", onPreview }) => {
+const SectionGrid = ({ itemList, emptyMessage = "Không có mục nào", onItemClick }) => {
     if (itemList.length === 0) {
         return <p className="text-xs text-gray-400 py-3 italic">{emptyMessage}</p>;
     }
@@ -75,7 +75,7 @@ const SectionGrid = ({ itemList, emptyMessage = "Không có mục nào", onPrevi
             {itemList.map((item) => (
                 <div
                     key={item.id}
-                    onClick={() => onPreview && onPreview(item)}
+                    onClick={() => onItemClick && onItemClick(item)}
                     className="bg-white border border-gray-200/80 rounded-xl p-3 hover:shadow-md hover:border-blue-300 transition-all cursor-pointer flex flex-col justify-between group h-32"
                 >
                     <div className="flex items-center justify-between">
@@ -109,7 +109,16 @@ const SectionGrid = ({ itemList, emptyMessage = "Không có mục nào", onPrevi
 };
 
 export default function HomePage() {
-    const { items, setActiveTab, isLoading, viewMode, setViewMode, openPreview } = useFiles();
+    const { items, setActiveTab, isLoading, viewMode, setViewMode, openPreview, openFolder } = useFiles();
+
+    const handleItemClick = (item) => {
+        if (item.type === 'folder') {
+            setActiveTab('my-drive');
+            openFolder(item);
+        } else {
+            openPreview(item);
+        }
+    };
 
     // 1. Mục của tôi (My Drive) - Top 5-6
     const myDriveItems = items
@@ -192,9 +201,9 @@ export default function HomePage() {
                     </button>
                 </div>
                 {viewMode === 'grid' ? (
-                    <SectionGrid itemList={myDriveItems} emptyMessage="Chưa có tệp nào trong Driver riêng của tôi." onPreview={openPreview} />
+                    <SectionGrid itemList={myDriveItems} emptyMessage="Chưa có tệp nào trong Driver riêng của tôi." onItemClick={handleItemClick} />
                 ) : (
-                    <SectionTable itemList={myDriveItems} emptyMessage="Chưa có tệp nào trong Driver riêng của tôi." onPreview={openPreview} />
+                    <SectionTable itemList={myDriveItems} emptyMessage="Chưa có tệp nào trong Driver riêng của tôi." onItemClick={handleItemClick} />
                 )}
             </section>
 
@@ -214,9 +223,9 @@ export default function HomePage() {
                     </button>
                 </div>
                 {viewMode === 'grid' ? (
-                    <SectionGrid itemList={recentItems} emptyMessage="Chưa có tệp nào mở gần đây." onPreview={openPreview} />
+                    <SectionGrid itemList={recentItems} emptyMessage="Chưa có tệp nào mở gần đây." onItemClick={handleItemClick} />
                 ) : (
-                    <SectionTable itemList={recentItems} emptyMessage="Chưa có tệp nào mở gần đây." onPreview={openPreview} />
+                    <SectionTable itemList={recentItems} emptyMessage="Chưa có tệp nào mở gần đây." onItemClick={handleItemClick} />
                 )}
             </section>
 
@@ -236,9 +245,9 @@ export default function HomePage() {
                     </button>
                 </div>
                 {viewMode === 'grid' ? (
-                    <SectionGrid itemList={sharedItems} emptyMessage="Chưa có tệp nào được chia sẻ với bạn." onPreview={openPreview} />
+                    <SectionGrid itemList={sharedItems} emptyMessage="Chưa có tệp nào được chia sẻ với bạn." onItemClick={handleItemClick} />
                 ) : (
-                    <SectionTable itemList={sharedItems} emptyMessage="Chưa có tệp nào được chia sẻ với bạn." onPreview={openPreview} />
+                    <SectionTable itemList={sharedItems} emptyMessage="Chưa có tệp nào được chia sẻ với bạn." onItemClick={handleItemClick} />
                 )}
             </section>
         </div>

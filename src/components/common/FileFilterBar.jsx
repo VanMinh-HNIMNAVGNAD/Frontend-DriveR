@@ -1,8 +1,7 @@
 import SelectDropdown from '../ui/SelectDropdown';
 import { 
-    FileType, 
-    Calendar, 
-    User, 
+    FileType,
+    Calendar,
     XCircle,
     Folder,
     FileText,
@@ -25,18 +24,9 @@ export default function FileFilterBar({
     filterDate = 'all',
     setFilterDate,
     filterOwner = 'all',
-    setFilterOwner,
-    uniqueOwners = [],
     onReset
 }) {
-    const { sortField, setSortField, sortDirection, setSortDirection, activeTab } = useFiles();
-
-    let showOwnerFilter = false;
-    if (['shared-with-me', 'shared-drives'].includes(activeTab)) {
-        showOwnerFilter = true;
-    } else if (activeTab === 'starred' && uniqueOwners.length > 1) {
-        showOwnerFilter = true;
-    }
+    const { sortField, setSortField, sortDirection, setSortDirection } = useFiles();
 
     // Extended File Type Options
     const typeOptions = [
@@ -58,19 +48,6 @@ export default function FileFilterBar({
         { value: '7days', label: '7 ngày qua' },
         { value: '30days', label: '30 ngày qua' },
         { value: 'this-year', label: 'Năm nay (2026)' },
-    ];
-
-    // Sender / Owner Options
-    const ownerOptions = [
-        { value: 'all', label: 'Bất kỳ ai' },
-        { value: 'me', label: 'Tôi sở hữu' },
-        { value: 'others', label: 'Được chia sẻ bởi người khác' },
-        ...uniqueOwners
-            .filter(owner => owner !== 'Tôi')
-            .map(owner => ({
-                value: owner,
-                label: owner
-            }))
     ];
 
     const hasActiveFilters = filterType !== 'all' || filterDate !== 'all' || filterOwner !== 'all';
@@ -123,18 +100,6 @@ export default function FileFilterBar({
                 onChange={setFilterDate}
                 active={filterDate !== 'all'}
             />
-
-            {/* Filter by Sender / Owner */}
-            {showOwnerFilter && (
-                <SelectDropdown
-                    label="Người gửi / Sở hữu"
-                    icon={User}
-                    options={ownerOptions}
-                    value={filterOwner}
-                    onChange={setFilterOwner}
-                    active={filterOwner !== 'all'}
-                />
-            )}
 
             {/* Quick Reset Filters Button */}
             {hasActiveFilters && (

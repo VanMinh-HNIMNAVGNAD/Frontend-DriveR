@@ -8,6 +8,7 @@ import FileInfoDrawer from '../file-manager/FileInfoDrawer';
 import ShareModal from '../file-manager/ShareModal';
 import RenameModal from '../file-manager/RenameModal';
 import FilePreviewModal from '../file-manager/FilePreviewModal';
+import UploadProgress from '../file-manager/UploadProgress';
 
 // Pages are now rendered via react-router-dom <Outlet />
 
@@ -81,6 +82,9 @@ export default function MainLayout() {
                     onClose={closePreview}
                 />
             )}
+
+            {/* Global Upload Progress — floating bottom-right */}
+            <UploadProgress />
         </div>
     );
 }

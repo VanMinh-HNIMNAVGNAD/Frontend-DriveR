@@ -76,7 +76,7 @@ export const userApi = {
 export const filesApi = {
   getFilesAndFolders: (params = {}) => api.get('/files', { params }),
   createFolder: (data) => api.post('/folders', data),
-  createFoldersBatch: (paths, parentId) => api.post('/files/folders/batch', { paths, parentId }),
+  createFoldersBatch: (paths, parentId, sharedDriveId) => api.post('/files/folders/batch', { paths, parentId, sharedDriveId }),
   renameItem: (id, data) => api.patch(`/files/${id}/rename`, data),
   moveItem: (id, data) => api.patch(`/files/${id}/move`, data),
   copyItem: (id, data) => api.post(`/files/${id}/copy`, data),
@@ -86,6 +86,7 @@ export const filesApi = {
   emptyTrash: () => api.delete('/files/trash/empty'),
   deletePermanently: (id) => api.delete(`/files/${id}/permanent`),
   getStorageAnalytics: () => api.get('/files/analytics'),
+  getLargestFiles: (limit = 3) => api.get('/files/largest', { params: { limit } }),
   downloadZip: (fileIds) => api.post('/files/download-zip', { fileIds }, { responseType: 'blob' }),
   getFileVersions: (id) => api.get(`/files/${id}/versions`),
   getActivityLogs: (fileId) => {
@@ -116,10 +117,11 @@ export const storageApi = {
       },
     });
   },
-  uploadProxy: async (file, parentId, targetProvider, onUploadProgress) => {
+  uploadProxy: async (file, parentId, targetProvider, onUploadProgress, sharedDriveId) => {
     const formData = new FormData();
     formData.append('file', file);
     if (parentId) formData.append('parentId', parentId);
+    if (sharedDriveId) formData.append('sharedDriveId', sharedDriveId);
     if (targetProvider) formData.append('targetProvider', targetProvider);
 
     return api.post('/files/upload-proxy', formData, {
@@ -217,4 +219,14 @@ export const adminApi = {
   getSystemAnalytics: () => api.get('/admin/analytics'),
 };
 
+// Shared Drives APIs
+export const sharedDrivesApi = {
+  create: (data) => api.post('/shared-drives', data),
+  getAll: () => api.get('/shared-drives'),
+  getOne: (id) => api.get(`/shared-drives/${id}`),
+  addMember: (id, data) => api.post(`/shared-drives/${id}/members`, data),
+  removeMember: (id, userId) => api.delete(`/shared-drives/${id}/members/${userId}`),
+};
+
 export default api;
+

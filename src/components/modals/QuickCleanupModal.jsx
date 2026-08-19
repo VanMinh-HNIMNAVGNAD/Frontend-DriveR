@@ -1,21 +1,35 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useFiles } from '../../context/FileContext';
+import { filesApi } from '../../services/api';
 import { Trash2, HardDrive, X, Sparkles, Check, AlertTriangle, FileText } from 'lucide-react';
 
 export default function QuickCleanupModal({ isOpen, onClose }) {
-  const { items, emptyTrash, deletePermanently, storageInfo } = useFiles();
+  const { items, emptyTrash, moveToTrash, storageInfo } = useFiles();
   const [isCleaningTrash, setIsCleaningTrash] = useState(false);
+  const [largeFiles, setLargeFiles] = useState(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    // Quét đệ quy toàn bộ drive (mọi thư mục con) ở backend, không chỉ thư mục đang mở
+    filesApi
+      .getLargestFiles(3)
+      .then((files) => {
+        if (!cancelled) setLargeFiles(files || []);
+      })
+      .catch(() => {
+        if (!cancelled) setLargeFiles([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
   const trashItems = items.filter((i) => i.isTrash);
   const trashBytes = trashItems.reduce((acc, curr) => acc + Number(curr.sizeBytes || curr.size || 0), 0);
   const trashMB = (trashBytes / (1024 * 1024)).toFixed(2);
-
-  // Large files (> 10MB or > 100MB)
-  const largeFiles = items.filter(
-    (i) => !i.isTrash && i.type === 'file' && Number(i.sizeBytes || i.size || 0) > 10 * 1024 * 1024,
-  );
 
   const handleEmptyTrashNow = async () => {
     try {
@@ -29,10 +43,9 @@ export default function QuickCleanupModal({ isOpen, onClose }) {
     }
   };
 
-  const handleDeleteLargeFile = async (id, name) => {
-    if (confirm(`Bạn có chắc muốn xóa vĩnh viễn tệp lớn "${name}"?`)) {
-      await deletePermanently(id);
-    }
+  const handleDeleteLargeFile = async (id) => {
+    await moveToTrash(id);
+    setLargeFiles((prev) => (prev || []).filter((f) => f.id !== id));
   };
 
   return (
@@ -84,11 +97,15 @@ export default function QuickCleanupModal({ isOpen, onClose }) {
         {/* Suggestion 2: Large Files */}
         <div className="space-y-3">
           <h4 className="text-xs font-bold text-gray-900 uppercase tracking-wider flex items-center justify-between">
-            <span>Các tệp dung lượng lớn ({largeFiles.length})</span>
+            <span>{(largeFiles || []).length} tệp lớn nhất nên xem xét xóa</span>
             <span className="text-[11px] font-semibold text-gray-500">{'>'} 10 MB</span>
           </h4>
 
-          {largeFiles.length === 0 ? (
+          {largeFiles === null ? (
+            <div className="p-4 text-center border border-dashed border-gray-200 rounded-2xl text-xs text-gray-500">
+              Đang quét toàn bộ drive...
+            </div>
+          ) : largeFiles.length === 0 ? (
             <div className="p-4 text-center border border-dashed border-gray-200 rounded-2xl text-xs text-gray-500">
               🎉 Bạn chưa có tệp lớn nào vượt quá 10MB!
             </div>
@@ -108,9 +125,9 @@ export default function QuickCleanupModal({ isOpen, onClose }) {
                     <div className="flex items-center gap-3 shrink-0">
                       <span className="font-bold text-amber-600 font-mono">{mb} MB</span>
                       <button
-                        onClick={() => handleDeleteLargeFile(file.id, file.name)}
+                        onClick={() => handleDeleteLargeFile(file.id)}
                         className="text-gray-400 hover:text-red-600 p-1 rounded-md transition-colors"
-                        title="Xóa tệp lớn này"
+                        title="Chuyển vào Thùng rác"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>

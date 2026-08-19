@@ -807,7 +807,7 @@ function ChildFilePreviewModal({
                     onClick={handleDownloadClick}
                     className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold rounded-xl text-white shadow-lg transition-all cursor-pointer"
                   >
-                    Tải xuống tệp gốc
+                    Tải xuống tệp gốc 
                   </button>
                 )}
               </div>
@@ -1248,7 +1248,7 @@ export default function SharePage() {
 
   const { file, owner, isDownloadAllowed, expiresAt, hasPassword } = shareData;
   const isFolder = file.type === 'folder';
-  const previewDisabledByOwner = !isFolder && shareData.isPreviewOnly === false && isDownloadAllowed === true;
+  const previewDisabledByOwner = shareData.isPreviewOnly === false && isDownloadAllowed === true;
   const requiresPassword = Boolean(hasPassword) && !shareAuthToken;
 
   if (requiresPassword) {

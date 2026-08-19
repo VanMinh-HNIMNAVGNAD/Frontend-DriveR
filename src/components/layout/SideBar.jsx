@@ -86,7 +86,7 @@ export default function Sidebar() {
         <nav className="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
           <NavItem id="home" label="Trang chủ" icon={Home} />
           <NavItem id="my-drive" label="Driver riêng của tôi" icon={HardDrive} />
-          <NavItem id="shared-drives" label="Tệp tôi đã chia sẻ" icon={FolderGit2} />
+          <NavItem id="shared-drives" label="Bộ nhớ dùng chung" icon={FolderGit2} />
           <NavItem id="shared-with-me" label="Driver được chia sẻ với tôi" icon={Users} />
           <NavItem id="recent" label="Đã mở gần đây" icon={Clock} />
           <NavItem id="starred" label="Mục được đánh dấu" icon={Star} />

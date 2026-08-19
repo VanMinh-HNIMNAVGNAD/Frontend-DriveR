@@ -23,7 +23,6 @@ export default function SettingsModal({ isOpen, onClose }) {
   // General Settings State
   const [theme, setTheme] = useState('system'); // 'light' | 'dark' | 'system'
   const [language, setLanguage] = useState('vi'); // 'vi' | 'en'
-  const [density, setDensity] = useState('comfortable'); // 'comfortable' | 'compact'
   const [defaultStartupPage, setDefaultStartupPage] = useState('my-drive'); // 'home' | 'my-drive' | 'recent'
   const [previewBehavior, setPreviewBehavior] = useState('double-click'); // 'auto-play' | 'double-click'
 
@@ -213,31 +212,17 @@ export default function SettingsModal({ isOpen, onClose }) {
                   </div>
                 </div>
 
-                {/* 2. Ngôn ngữ & Mật độ */}
-                <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-100">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-900 mb-2">Ngôn ngữ giao diện</label>
-                    <select
-                      value={language}
-                      onChange={(e) => setLanguage(e.target.value)}
-                      className="w-full border border-gray-300 rounded-xl px-3 py-2 text-xs bg-white focus:border-blue-600 outline-none"
-                    >
-                      <option value="vi">🇻🇳 Tiếng Việt</option>
-                      <option value="en">🇺🇸 English (US)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-900 mb-2">Mật độ hiển thị danh sách</label>
-                    <select
-                      value={density}
-                      onChange={(e) => setDensity(e.target.value)}
-                      className="w-full border border-gray-300 rounded-xl px-3 py-2 text-xs bg-white focus:border-blue-600 outline-none"
-                    >
-                      <option value="comfortable">Thoải mái (Mặc định)</option>
-                      <option value="compact">Thu gọn (Hiển thị nhiều hàng hơn)</option>
-                    </select>
-                  </div>
+                {/* 2. Ngôn ngữ */}
+                <div className="pt-2 border-t border-gray-100">
+                  <label className="block text-xs font-bold text-gray-900 mb-2">Ngôn ngữ giao diện</label>
+                  <select
+                    value={language}
+                    onChange={(e) => setLanguage(e.target.value)}
+                    className="w-full border border-gray-300 rounded-xl px-3 py-2 text-xs bg-white focus:border-blue-600 outline-none"
+                  >
+                    <option value="vi">🇻🇳 Tiếng Việt</option>
+                    <option value="en">🇺🇸 English (US)</option>
+                  </select>
                 </div>
 
                 {/* 3. Trang khởi động */}

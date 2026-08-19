@@ -119,6 +119,11 @@ export function UploadProvider({ children }) {
     setUploadQueue((prev) => prev.filter((j) => j.id !== id));
   }, []);
 
+  /** Xóa toàn bộ queue */
+  const clearQueue = useCallback(() => {
+    setUploadQueue([]);
+  }, []);
+
   /** Reset job về pending (retry) */
   const resetJob = useCallback((id, resetPatch) => {
     setUploadQueue((prev) =>
@@ -135,6 +140,7 @@ export function UploadProvider({ children }) {
         updateJob,
         enqueueJob,
         removeJob,
+        clearQueue,
         resetJob,
       }}
     >

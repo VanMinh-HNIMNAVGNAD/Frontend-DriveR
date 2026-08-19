@@ -298,11 +298,11 @@ export default function ActivityLogDrawer({ isOpen, onClose, fileId = null, file
                 ) : null;
 
                 return (
-                    <div className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed">
+                    <div className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
                         Tải lên tệp <span className="font-semibold text-gray-900 dark:text-gray-100">{name}</span>
                         {size && <span className="text-gray-500 dark:text-gray-400"> ({size})</span>}
                         {provider && (
-                            <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
+                            <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">
                                 {provider}
                             </span>
                         )}
@@ -312,14 +312,14 @@ export default function ActivityLogDrawer({ isOpen, onClose, fileId = null, file
             case 'CREATE_FOLDER': {
                 const name = d.folderName || d.name || 'Thư mục mới';
                 return (
-                    <div className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed">
+                    <div className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
                         Tạo thư mục mới <span className="font-semibold text-gray-900 dark:text-gray-100">{name}</span>
                     </div>
                 );
             }
             case 'RENAME_ITEM': {
                 return (
-                    <div className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed">
+                    <div className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
                         {d.oldName && d.newName ? (
                             <>
                                 Đổi tên từ <del className="text-gray-400 font-medium">{d.oldName}</del> thành{' '}
@@ -338,14 +338,14 @@ export default function ActivityLogDrawer({ isOpen, onClose, fileId = null, file
                 const from = d.fromPath || '/';
                 const to = d.toPath || '/';
                 return (
-                    <div className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed space-y-1">
+                    <div className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed space-y-1">
                         <div>
                             Di chuyển <span className="font-semibold text-gray-900 dark:text-gray-100">{name}</span>
                         </div>
-                        <div className="text-[11px] text-gray-500 dark:text-gray-400 flex items-center gap-1.5 flex-wrap">
-                            <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono text-[10px]">{from}</span>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1.5 flex-wrap">
+                            <span className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 font-mono text-xs">{from}</span>
                             <span>➔</span>
-                            <span className="px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 font-mono text-[10px]">{to}</span>
+                            <span className="px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 font-mono text-xs">{to}</span>
                         </div>
                     </div>
                 );
@@ -354,7 +354,7 @@ export default function ActivityLogDrawer({ isOpen, onClose, fileId = null, file
                 const name = d.fileName || 'Tệp';
                 const isStarred = d.isStarred;
                 return (
-                    <div className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed">
+                    <div className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
                         {isStarred ? (
                             <>
                                 Đã thêm <span className="font-semibold text-gray-900 dark:text-gray-100">{name}</span> vào mục gắn dấu sao
@@ -370,7 +370,7 @@ export default function ActivityLogDrawer({ isOpen, onClose, fileId = null, file
             case 'TRASH_ITEM': {
                 const name = d.fileName || 'Tệp';
                 return (
-                    <div className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed">
+                    <div className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
                         Chuyển <span className="font-semibold text-gray-900 dark:text-gray-100">{name}</span> vào thùng rác
                     </div>
                 );
@@ -378,7 +378,7 @@ export default function ActivityLogDrawer({ isOpen, onClose, fileId = null, file
             case 'RESTORE_ITEM': {
                 const name = d.fileName || 'Tệp';
                 return (
-                    <div className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed">
+                    <div className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
                         Khôi phục <span className="font-semibold text-gray-900 dark:text-gray-100">{name}</span> từ thùng rác
                     </div>
                 );
@@ -387,7 +387,7 @@ export default function ActivityLogDrawer({ isOpen, onClose, fileId = null, file
                 const name = d.fileName || 'Tệp';
                 const freed = d.freedBytes ? formatBytes(d.freedBytes) : null;
                 return (
-                    <div className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed">
+                    <div className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
                         Đã xóa vĩnh viễn <span className="font-semibold text-gray-900 dark:text-gray-100">{name}</span>
                         {freed && <span className="text-rose-600 dark:text-rose-400 font-medium"> (Giải phóng {freed})</span>}
                     </div>
@@ -397,7 +397,7 @@ export default function ActivityLogDrawer({ isOpen, onClose, fileId = null, file
                 const count = d.deletedCount || 0;
                 const freed = d.freedBytes ? formatBytes(d.freedBytes) : null;
                 return (
-                    <div className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed">
+                    <div className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
                         Đã dọn sạch thùng rác: xóa {count} mục
                         {freed && <span className="text-rose-600 dark:text-rose-400 font-medium"> (Giải phóng {freed})</span>}
                     </div>
@@ -408,7 +408,7 @@ export default function ActivityLogDrawer({ isOpen, onClose, fileId = null, file
                 const name = d.fileName || d.folderName || 'Bản sao';
                 const size = d.sizeBytes ? formatBytes(d.sizeBytes) : null;
                 return (
-                    <div className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed">
+                    <div className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
                         Tạo bản sao mới <span className="font-semibold text-gray-900 dark:text-gray-100">{name}</span>
                         {size && <span className="text-gray-500 dark:text-gray-400"> ({size})</span>}
                     </div>
@@ -419,12 +419,12 @@ export default function ActivityLogDrawer({ isOpen, onClose, fileId = null, file
                 const email = d.targetEmail || 'Người dùng';
                 const roleText = d.role === 'EDITOR' ? 'Chỉnh sửa (Editor)' : 'Xem (Viewer)';
                 return (
-                    <div className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed space-y-1">
+                    <div className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed space-y-1">
                         <div>
                             Chia sẻ quyền <span className="font-semibold text-gray-900 dark:text-gray-100">{name}</span> tới{' '}
                             <span className="font-medium text-blue-600 dark:text-blue-400">{email}</span>
                         </div>
-                        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
                             <Shield className="w-3 h-3" />
                             <span>{roleText}</span>
                         </div>
@@ -434,7 +434,7 @@ export default function ActivityLogDrawer({ isOpen, onClose, fileId = null, file
             case 'SHARE_ACCESS_REMOVED': {
                 const name = d.fileName || 'Tệp';
                 return (
-                    <div className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed">
+                    <div className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
                         Thu hồi quyền truy cập trên tệp <span className="font-semibold text-gray-900 dark:text-gray-100">{name}</span>
                     </div>
                 );
@@ -451,7 +451,7 @@ export default function ActivityLogDrawer({ isOpen, onClose, fileId = null, file
                 const access = accessMap[d.accessLevel] || d.accessLevel || 'Công khai';
                 const role = roleMap[d.role] || d.role || 'Xem';
                 return (
-                    <div className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed">
+                    <div className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
                         Tạo liên kết chia sẻ: quyền <span className="font-semibold text-gray-900 dark:text-gray-100">{role}</span> ({access})
                     </div>
                 );
@@ -459,7 +459,7 @@ export default function ActivityLogDrawer({ isOpen, onClose, fileId = null, file
             default: {
                 if (Object.keys(d).length === 0) return null;
                 return (
-                    <div className="text-xs text-gray-600 dark:text-gray-400 font-mono text-[11px] bg-gray-50 dark:bg-gray-900 p-1.5 rounded">
+                    <div className="text-gray-600 dark:text-gray-400 font-mono text-xs bg-gray-50 dark:bg-gray-900 p-1.5 rounded">
                         {JSON.stringify(d)}
                     </div>
                 );
@@ -491,7 +491,7 @@ export default function ActivityLogDrawer({ isOpen, onClose, fileId = null, file
                                 <h2 className="font-bold text-base text-gray-900 dark:text-gray-100 truncate">
                                     Lịch sử hoạt động
                                 </h2>
-                                <p className="text-[11px] text-gray-500 dark:text-gray-400 font-medium truncate flex items-center gap-1.5 mt-0.5">
+                                <p className="text-xs text-gray-500 dark:text-gray-400 font-medium truncate flex items-center gap-1.5 mt-0.5">
                                     {fileId ? (
                                         <>
                                             <FileText className="w-3 h-3 text-blue-500 shrink-0" />
@@ -528,7 +528,7 @@ export default function ActivityLogDrawer({ isOpen, onClose, fileId = null, file
                     </div>
 
                     {/* Filter Pills */}
-                    <div className="flex items-center gap-1.5 overflow-x-auto pt-4 pb-1 no-scrollbar">
+                    <div className="flex items-center gap-2 overflow-x-auto pt-4 pb-1 no-scrollbar">
                         {Object.values(ACTION_GROUPS).map((group) => {
                             const count = groupCounts[group.id] || 0;
                             const isSelected = selectedGroup === group.id;
@@ -537,19 +537,19 @@ export default function ActivityLogDrawer({ isOpen, onClose, fileId = null, file
                                 <button
                                     key={group.id}
                                     onClick={() => setSelectedGroup(group.id)}
-                                    className={`px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all whitespace-nowrap flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                                    className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all whitespace-nowrap flex items-center gap-1.5 shrink-0 cursor-pointer ${
                                         isSelected
-                                            ? 'bg-blue-600 text-white shadow-xs'
-                                            : 'bg-gray-100 dark:bg-gray-800/80 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+                                            ? 'bg-blue-600 text-white shadow-sm'
+                                            : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700'
                                     }`}
                                 >
                                     <span>{group.label}</span>
                                     {count > 0 && (
                                         <span
-                                            className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                                            className={`px-1.5 py-0.5 rounded-full text-[11px] font-bold leading-none ${
                                                 isSelected
-                                                    ? 'bg-white/20 text-white'
-                                                    : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                                                    ? 'bg-white/25 text-white'
+                                                    : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200'
                                             }`}
                                         >
                                             {count}
@@ -562,7 +562,7 @@ export default function ActivityLogDrawer({ isOpen, onClose, fileId = null, file
                 </div>
 
                 {/* Timeline Content */}
-                <div className="flex-1 overflow-y-auto p-5 relative">
+                <div className="flex-1 overflow-y-auto p-5 relative bg-gray-50/60 dark:bg-black/20">
                     {/* Loading State */}
                     {isLoading && (
                         <div className="space-y-4 animate-pulse">
@@ -631,7 +631,7 @@ export default function ActivityLogDrawer({ isOpen, onClose, fileId = null, file
 
                     {/* Timeline List */}
                     {!isLoading && !error && filteredLogs.length > 0 && (
-                        <div className="relative pl-6 space-y-6 before:absolute before:left-3 before:top-3 before:bottom-3 before:w-0.5 before:bg-gray-200 dark:before:bg-gray-800">
+                        <div className="relative pl-6 space-y-4 before:absolute before:left-3 before:top-3 before:bottom-3 before:w-0.5 before:bg-gray-200 dark:before:bg-gray-700">
                             {filteredLogs.map((log) => {
                                 const visual = getActionVisual(log.action, log.details);
                                 const IconComponent = visual.icon;
@@ -640,35 +640,35 @@ export default function ActivityLogDrawer({ isOpen, onClose, fileId = null, file
                                     <div key={log.id} className="relative group">
                                         {/* Dot on timeline */}
                                         <div
-                                            className={`absolute -left-6 top-1.5 w-6 h-6 rounded-full flex items-center justify-center shadow-xs ring-4 bg-white dark:bg-[#1e1e1e] ring-white dark:ring-[#1e1e1e] z-10`}
+                                            className={`absolute -left-6 top-2 w-6 h-6 rounded-full flex items-center justify-center shadow-sm ring-4 bg-white dark:bg-[#1e1e1e] ring-white dark:ring-[#1e1e1e] z-10`}
                                         >
                                             <div className={`w-3.5 h-3.5 rounded-full ${visual.timelineDot}`} />
                                         </div>
 
                                         {/* Activity Item Card */}
-                                        <div className="p-3.5 rounded-2xl bg-gray-50/70 hover:bg-gray-50 dark:bg-gray-850/60 dark:hover:bg-gray-800/80 border border-gray-100 hover:border-gray-200 dark:border-gray-800/70 dark:hover:border-gray-700 transition-all space-y-2">
+                                        <div className="p-4 rounded-2xl bg-white hover:bg-white dark:bg-gray-900 dark:hover:bg-gray-900 border border-gray-200 hover:border-gray-300 hover:shadow-md dark:border-gray-800 dark:hover:border-gray-700 shadow-sm transition-all space-y-2.5">
                                             {/* Action Header & Badge */}
                                             <div className="flex items-center justify-between gap-2">
                                                 <div className="flex items-center gap-2">
-                                                    <div className={`p-1 rounded-lg ${visual.bgBadge}`}>
-                                                        <IconComponent className="w-3.5 h-3.5" />
+                                                    <div className={`p-1.5 rounded-lg ${visual.bgBadge}`}>
+                                                        <IconComponent className="w-4 h-4" />
                                                     </div>
-                                                    <span className="font-bold text-xs text-gray-900 dark:text-gray-100">
+                                                    <span className="font-bold text-sm text-gray-900 dark:text-gray-100">
                                                         {visual.label}
                                                     </span>
                                                 </div>
 
                                                 <div
-                                                    className="text-[11px] text-gray-400 dark:text-gray-500 font-medium flex items-center gap-1 shrink-0"
+                                                    className="text-xs text-gray-500 dark:text-gray-400 font-medium flex items-center gap-1 shrink-0"
                                                     title={formatExactDateTime(log.createdAt)}
                                                 >
-                                                    <Clock className="w-3 h-3" />
+                                                    <Clock className="w-3.5 h-3.5" />
                                                     <span>{formatRelativeTime(log.createdAt)}</span>
                                                 </div>
                                             </div>
 
                                             {/* Description details */}
-                                            <div className="pl-6">
+                                            <div className="pl-7">
                                                 {renderLogDescription(log)}
                                             </div>
                                         </div>
@@ -680,13 +680,13 @@ export default function ActivityLogDrawer({ isOpen, onClose, fileId = null, file
                 </div>
 
                 {/* Footer Summary */}
-                <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-[#1a1a1a] flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 shrink-0">
+                <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-[#1a1a1a] flex items-center justify-between text-xs text-gray-600 dark:text-gray-400 shrink-0">
                     <div className="flex items-center gap-1.5">
                         <Activity className="w-3.5 h-3.5 text-blue-500" />
-                        <span>Tổng số: <strong className="text-gray-800 dark:text-gray-200 font-bold">{filteredLogs.length}</strong> / {logs.length} hoạt động</span>
+                        <span>Tổng số: <strong className="text-gray-900 dark:text-gray-200 font-bold">{filteredLogs.length}</strong> / {logs.length} hoạt động</span>
                     </div>
 
-                    <span className="text-[10px] text-gray-400">
+                    <span className="text-xs text-gray-500 dark:text-gray-500">
                         {logs[0] ? `Mới nhất: ${formatRelativeTime(logs[0].createdAt)}` : ''}
                     </span>
                 </div>

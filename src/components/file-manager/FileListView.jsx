@@ -1,12 +1,8 @@
-import { useState, useEffect, useCallback, useMemo, memo } from 'react';
+import { useState, useCallback, useRef, memo } from 'react';
 import { useFiles } from '../../context/FileContext';
-import { sharingApi } from '../../services/api';
+import { filesApi, sharingApi } from '../../services/api';
 import toast from 'react-hot-toast';
-import { storageApi } from '../../services/api';
 import { formatBytes } from '../../utils/formatFileSize';
-import * as XLSX from 'xlsx';
-import mammoth from 'mammoth';
-import * as pdfjsLib from 'pdfjs-dist';
 import FileSkeleton from '../common/FileSkeleton';
 import ContextMenu from './ContextMenu';
 import RenameModal from './RenameModal';
@@ -31,186 +27,10 @@ import {
     ChevronRight,
     ArrowUp,
     ArrowDown,
-    Shield,
-    Users,
     CheckSquare,
     Square,
     Minus
 } from 'lucide-react';
-
-// ── Mini thumbnail helpers ──────────────────────────────────────
-const MAX_THUMBNAIL_SIZE = 10 * 1024 * 1024; // 10MB
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-    'pdfjs-dist/build/pdf.worker.min.mjs',
-    import.meta.url
-).toString();
-
-function getFileCategoryForThumb(name = '') {
-    const n = name.toLowerCase();
-    if (n.endsWith('.pdf')) return 'pdf';
-    if (n.endsWith('.xlsx') || n.endsWith('.csv') || n.endsWith('.xls')) return 'sheet';
-    if (/\.(png|jpg|jpeg|svg|webp|gif|bmp|ico)$/i.test(n)) return 'image';
-    if (/\.(mp4|mkv|mov|webm)$/i.test(n)) return 'video';
-    if (/\.(docx|doc)$/i.test(n)) return 'docx';
-    if (/\.(md|markdown)$/i.test(n)) return 'markdown';
-    if (/\.(txt|md|markdown|log|env|conf|ini)$/i.test(n)) return 'textdoc';
-    // Danh sách mở rộng toàn bộ các file code
-    if (/\.(js|jsx|ts|tsx|py|java|c|cpp|h|hpp|cs|go|rb|php|sh|bash|zsh|json|xml|yaml|yml|toml|css|scss|sass|html|htm|vue|svelte|kt|swift|rs|dart|lua|sql|prisma|graphql)$/i.test(n)) {
-        return 'code';
-    }
-    return 'none';
-}
-
-/**
- * FileRowThumb – mini thumbnail (40×28px) trong list view.
- * Component riêng để dùng hooks hợp lệ.
- */
-function FileRowThumb({ file }) {
-    const cat = getFileCategoryForThumb(file?.name);
-    const [thumbType, setThumbType] = useState(null);
-    const [thumbUrl, setThumbUrl] = useState(null);
-    const [textContent, setTextContent] = useState(null);
-    const [sheetData, setSheetData] = useState(null);
-
-    useEffect(() => {
-        if (!file?.id || cat === 'none') return;
-        const sizeOk = !file.size || file.size <= MAX_THUMBNAIL_SIZE;
-        if (!sizeOk) return;
-
-        let isMounted = true;
-
-        if (cat === 'image' || cat === 'video') {
-            storageApi.getPreviewUrl(file.id)
-                .then(res => {
-                    if (isMounted && res?.previewUrl) {
-                        setThumbUrl(res.previewUrl);
-                        setThumbType(cat);
-                    }
-                }).catch(() => {});
-
-        } else if (cat === 'pdf') {
-            // Sửa triệt để: Dùng fetch arrayBuffer để render Canvas, KHÔNG dùng iframe
-            (async () => {
-                try {
-                    const res = await storageApi.getPreviewUrl(file.id);
-                    if (!res?.previewUrl || !isMounted) return;
-
-                    const pdfData = await fetch(res.previewUrl).then(r => r.arrayBuffer());
-                    if (!isMounted) return;
-
-                    const loadingTask = pdfjsLib.getDocument({ data: pdfData });
-                    const pdf = await loadingTask.promise;
-                    if (!isMounted) return;
-
-                    const page = await pdf.getPage(1);
-                    const viewport = page.getViewport({ scale: 0.3 });
-                    const canvas = document.createElement('canvas');
-                    const context = canvas.getContext('2d');
-                    canvas.height = viewport.height;
-                    canvas.width = viewport.width;
-
-                    await page.render({ canvasContext: context, viewport }).promise;
-
-                    if (isMounted) {
-                        setThumbUrl(canvas.toDataURL('image/jpeg', 0.8));
-                        setThumbType('image'); // Render dưới dạng ảnh thông thường, không bị popup download
-                    }
-                } catch {
-                    // Fallback tự động về icon mặc định nếu lỗi
-                }
-            })();
-
-        } else if (cat === 'sheet') {
-            (async () => {
-                try {
-                    const res = await storageApi.getPreviewUrl(file.id);
-                    if (!res?.previewUrl || !isMounted) return;
-                    const response = await fetch(res.previewUrl);
-                    if (!response.ok || !isMounted) return;
-                    const buffer = await response.arrayBuffer();
-                    if (!isMounted) return;
-                    const wb = XLSX.read(buffer, { type: 'array' });
-                    const ws = wb.Sheets[wb.SheetNames[0]];
-                    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-                    if (isMounted && rows.length > 0) {
-                        setSheetData(rows.slice(0, 3));
-                        setThumbType('sheet');
-                    }
-                } catch { /* fallback icon */ }
-            })();
-
-        } else if (cat === 'docx') {
-            (async () => {
-                try {
-                    const res = await storageApi.getPreviewUrl(file.id);
-                    if (!res?.previewUrl || !isMounted) return;
-                    const response = await fetch(res.previewUrl);
-                    if (!response.ok || !isMounted) return;
-                    const buffer = await response.arrayBuffer();
-                    if (!isMounted) return;
-                    const result = await mammoth.extractRawText({ arrayBuffer: buffer });
-                    if (isMounted && result?.value?.trim()) {
-                        setTextContent(result.value.slice(0, 80));
-                        setThumbType('text');
-                    }
-                } catch { /* fallback icon */ }
-            })();
-
-        } else if (cat === 'markdown' || cat === 'code' || cat === 'textdoc') {
-            storageApi.getFileTextContent(file.id)
-                .then(res => {
-                    if (isMounted && res?.content) {
-                        setTextContent(res.content.slice(0, 100));
-                        setThumbType('text');
-                    }
-                }).catch(() => {});
-        }
-
-        return () => {
-            isMounted = false;
-        };
-    }, [cat, file?.id, file?.size]);
-
-    if (!thumbType) return null;
-
-    return (
-        <div className="w-10 h-7 rounded overflow-hidden flex-shrink-0 bg-gray-100 border border-gray-200/60" style={{ minWidth: '2.5rem' }}>
-            {thumbType === 'image' && thumbUrl && (
-                <img src={thumbUrl} alt={file.name} className="w-full h-full object-cover" />
-            )}
-            {thumbType === 'video' && thumbUrl && (
-                <video src={thumbUrl} muted preload="metadata" className="w-full h-full object-cover pointer-events-none" />
-            )}
-            {thumbType === 'sheet' && sheetData && (
-                <div className="w-full h-full bg-emerald-50 p-px overflow-hidden">
-                    <table className="w-full border-collapse" style={{ fontSize: '5px', lineHeight: 1.2 }}>
-                        <tbody>
-                            {sheetData.map((row, ri) => (
-                                <tr key={ri} className={ri === 0 ? 'bg-emerald-100 font-bold' : ''}>
-                                    {Array.from({ length: Math.min(row.length, 4) }).map((_, ci) => (
-                                        <td key={ci} className="border border-emerald-200/40 px-px truncate text-emerald-900 opacity-70">
-                                            {String(row[ci] ?? '').slice(0, 6)}
-                                        </td>
-                                    ))}
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
-            {thumbType === 'text' && textContent && (
-                <div className="w-full h-full bg-slate-900 text-emerald-400 p-0.5 overflow-hidden font-mono text-[5px] leading-none opacity-80 select-none">
-                    {textContent}
-                </div>
-            )}
-            {cat === 'markdown' && !thumbType && (
-                <div className="w-full h-full bg-linear-to-br from-indigo-50 to-purple-50 flex items-center justify-center">
-                    <FileCode className="w-4 h-4 text-indigo-500" />
-                </div>
-            )}
-        </div>
-    );
-}
 
 const getFileTypeLabel = (item) => {
     if (item.type === 'folder') return 'Thư mục';
@@ -427,7 +247,6 @@ const FileTableRow = memo(function FileTableRow({
             <td className="py-2.5 px-3">
                 <div className="flex items-center gap-2">
                     {getFileIcon(file)}
-                    <FileRowThumb file={file} />
                     <span className="font-semibold text-gray-900 group-hover:text-blue-600 truncate max-w-[180px]" title={file.name}>
                         {file.name}
                     </span>
@@ -532,15 +351,113 @@ export default function FileListView() {
         cutItems,
         copyItems,
         pasteItems,
+        // Upload / tạo thư mục (right-click vùng nền trống)
+        createFolder,
+        enqueueUpload,
+        currentFolderId,
+        currentSharedDriveId,
+        triggerReload,
     } = useFiles();
 
     // Context menu state
     const [contextMenu, setContextMenu] = useState({ isOpen: false, x: 0, y: 0, item: null });
+    const [isBuildingTree, setIsBuildingTree] = useState(false);
 
     // Modals state
     const [renameItemTarget, setRenameItemTarget] = useState(null);
     const [shareItemTarget, setShareItemTarget] = useState(null);
     const [geminiItemTarget, setGeminiItemTarget] = useState(null);
+
+    // Hidden inputs cho "Tải tệp lên" / "Tải thư mục lên" từ menu vùng nền trống
+    const fileInputRef = useRef(null);
+    const folderInputRef = useRef(null);
+    const setFolderInputRef = useCallback((el) => {
+        folderInputRef.current = el;
+        if (el) {
+            el.setAttribute('webkitdirectory', '');
+            el.setAttribute('directory', '');
+        }
+    }, []);
+
+    const handleCreateFolderPrompt = useCallback(() => {
+        if (activeTab === 'shared-drives' && !currentSharedDriveId && !currentFolderId) {
+            alert('Vui lòng mở một Bộ nhớ dùng chung trước khi tạo thư mục mới.');
+            return;
+        }
+        const name = prompt('Nhập tên thư mục mới:', 'Thư mục chưa đặt tên');
+        if (name) {
+            createFolder(name);
+        }
+    }, [activeTab, currentSharedDriveId, currentFolderId, createFolder]);
+
+    const handleFileInputChange = useCallback((e) => {
+        const selectedFiles = Array.from(e.target.files || []);
+        e.target.value = '';
+        if (selectedFiles.length === 0) return;
+        if (activeTab === 'shared-drives' && !currentSharedDriveId && !currentFolderId) {
+            alert('Vui lòng mở một Bộ nhớ dùng chung trước khi tải tệp lên.');
+            return;
+        }
+        selectedFiles.forEach((file) => enqueueUpload(file));
+    }, [activeTab, currentSharedDriveId, currentFolderId, enqueueUpload]);
+
+    // Tải folder lên, giữ nguyên cấu trúc thư mục con (giống NewButton.jsx)
+    const handleFolderInputChange = useCallback(async (e) => {
+        const selectedFiles = Array.from(e.target.files || []);
+        e.target.value = '';
+        if (selectedFiles.length === 0) return;
+
+        if (activeTab === 'shared-drives' && !currentSharedDriveId && !currentFolderId) {
+            alert('Vui lòng mở một Bộ nhớ dùng chung trước khi tải thư mục lên.');
+            return;
+        }
+
+        setIsBuildingTree(true);
+        try {
+            const dirPathSet = new Set();
+            selectedFiles.forEach((file) => {
+                const parts = file.webkitRelativePath.split('/');
+                for (let depth = 1; depth < parts.length; depth++) {
+                    dirPathSet.add(parts.slice(0, depth).join('/'));
+                }
+            });
+
+            const sortedDirPaths = Array.from(dirPathSet).sort((a, b) => {
+                const depthA = a.split('/').length;
+                const depthB = b.split('/').length;
+                if (depthA !== depthB) return depthA - depthB;
+                return a.localeCompare(b);
+            });
+
+            let batchFolderIdMap = {};
+            const effectiveSharedDriveId = activeTab === 'shared-drives' ? currentSharedDriveId : undefined;
+            if (sortedDirPaths.length > 0) {
+                try {
+                    batchFolderIdMap = await filesApi.createFoldersBatch(
+                        sortedDirPaths,
+                        currentFolderId,
+                        effectiveSharedDriveId,
+                    );
+                } catch (error) {
+                    console.error('Lỗi khi tạo hàng loạt thư mục:', error);
+                    alert('Không thể tạo toàn bộ cấu trúc thư mục, một số tệp có thể bị đặt sai vị trí.');
+                }
+            }
+
+            const folderIdMap = { '': currentFolderId, ...batchFolderIdMap };
+
+            selectedFiles.forEach((file) => {
+                const parts = file.webkitRelativePath.split('/');
+                const dirPath = parts.slice(0, -1).join('/');
+                const targetId = folderIdMap[dirPath] ?? currentFolderId;
+                enqueueUpload(file, targetId, undefined, effectiveSharedDriveId);
+            });
+
+            triggerReload();
+        } finally {
+            setIsBuildingTree(false);
+        }
+    }, [activeTab, currentSharedDriveId, currentFolderId, enqueueUpload, triggerReload]);
 
     // ── Selection Helpers ──
     const allCurrentCount = (folders?.length || 0) + (files?.length || 0);
@@ -594,6 +511,16 @@ export default function FileListView() {
         });
     }, []);
 
+    const openBlankContextMenu = useCallback((e) => {
+        e.preventDefault();
+        setContextMenu({
+            isOpen: true,
+            x: e.clientX,
+            y: e.clientY,
+            item: null
+        });
+    }, []);
+
     const closeContextMenu = useCallback(() => {
         setContextMenu({ isOpen: false, x: 0, y: 0, item: null });
     }, []);
@@ -618,21 +545,41 @@ export default function FileListView() {
 
     if (currentFilteredItems.length === 0) {
         return (
-            <div 
-                onContextMenu={(e) => e.preventDefault()}
+            <div
+                onContextMenu={openBlankContextMenu}
                 className="flex flex-col items-center justify-center py-20 text-gray-400 select-none"
             >
                 <FolderOpen className="w-16 h-16 stroke-1 text-gray-300 mb-3" />
                 <p className="text-sm font-medium text-gray-500">Chưa có tệp hoặc thư mục nào ở đây</p>
+
+                <input type="file" ref={fileInputRef} onChange={handleFileInputChange} multiple className="hidden" aria-label="Chọn nhiều tệp để tải lên" />
+                <input type="file" ref={setFolderInputRef} onChange={handleFolderInputChange} multiple className="hidden" aria-label="Chọn thư mục để tải lên" />
+
+                <ContextMenu
+                    isOpen={contextMenu.isOpen}
+                    x={contextMenu.x}
+                    y={contextMenu.y}
+                    item={contextMenu.item}
+                    isTrashTab={activeTab === 'trash'}
+                    activeTab={activeTab}
+                    onClose={closeContextMenu}
+                    onUploadFile={() => fileInputRef.current?.click()}
+                    onUploadFolder={() => folderInputRef.current?.click()}
+                    onCreateFolder={handleCreateFolderPrompt}
+                    isBuildingTree={isBuildingTree}
+                />
             </div>
         );
     }
 
     return (
-        <div 
-            onContextMenu={(e) => e.preventDefault()}
+        <div
+            onContextMenu={openBlankContextMenu}
             className="w-full flex flex-col h-full justify-between select-none text-xs sm:text-sm relative"
         >
+            <input type="file" ref={fileInputRef} onChange={handleFileInputChange} multiple className="hidden" aria-label="Chọn nhiều tệp để tải lên" />
+            <input type="file" ref={setFolderInputRef} onChange={handleFolderInputChange} multiple className="hidden" aria-label="Chọn thư mục để tải lên" />
+
             {/* Extended Metadata Table View */}
             <div className="w-full overflow-x-auto rounded-xl border border-gray-100 shadow-2xs bg-white">
                 <table className="w-full text-left border-collapse min-w-[850px]">
@@ -766,6 +713,13 @@ export default function FileListView() {
                 </table>
             </div>
 
+            {/*
+              Vùng nền trống bên dưới bảng — right-click vào đây để tải lên / tạo thư mục mới.
+              Cần thiết vì khi danh sách dài, các hàng <tr> chiếm hết chiều cao và không còn
+              chỗ nào để right-click ra menu vùng trống.
+            */}
+            <div className="flex-1 min-h-[120px] shrink-0" aria-hidden="true" />
+
             {/* Pagination Controls */}
             {totalPages > 1 && (
                 <div className="flex items-center justify-between pt-4 text-xs text-gray-500">
@@ -803,6 +757,10 @@ export default function FileListView() {
                 isTrashTab={activeTab === 'trash'}
                 activeTab={activeTab}
                 onClose={closeContextMenu}
+                onUploadFile={() => fileInputRef.current?.click()}
+                onUploadFolder={() => folderInputRef.current?.click()}
+                onCreateFolder={handleCreateFolderPrompt}
+                isBuildingTree={isBuildingTree}
                 onPreview={(item) => openPreview(item)}
                 onDownload={async (item) => {
                     if (item.type === 'folder') {

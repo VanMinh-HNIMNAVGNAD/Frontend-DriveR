@@ -1,27 +1,31 @@
 import { useState, useEffect, useRef } from 'react';
-import { 
-    Download, 
-    Pencil, 
-    Sparkles, 
-    UserPlus, 
-    Info, 
-    Trash2, 
-    ThumbsDown, 
-    ChevronRight, 
-    Copy, 
-    Star, 
-    FolderInput, 
+import {
+    Download,
+    Pencil,
+    Sparkles,
+    UserPlus,
+    Info,
+    Trash2,
+    ThumbsDown,
+    ChevronRight,
+    Copy,
+    Star,
+    FolderInput,
     RotateCcw,
     Eye,
     Scissors,
     Loader2,
-    ShieldOff
+    ShieldOff,
+    FileUp,
+    FolderUp,
+    FolderPlus
 } from 'lucide-react';
 
-export default function ContextMenu({ 
-    x, 
-    y, 
-    item, 
+export default function ContextMenu({
+    isOpen = true,
+    x,
+    y,
+    item,
     isTrashTab = false,
     activeTab = 'my-drive',
     onClose, 
@@ -39,9 +43,14 @@ export default function ContextMenu({
     onMoveToTrash, 
     onRestore,
     onDeletePermanently,
-    onToggleStar, 
-    onShowInfo, 
-    onDismissSuggestion 
+    onToggleStar,
+    onShowInfo,
+    onDismissSuggestion,
+    // Menu cho vùng nền trống (right-click ngoài mọi file/folder) — không có `item`
+    onUploadFile,
+    onUploadFolder,
+    onCreateFolder,
+    isBuildingTree = false,
 }) {
     const menuRef = useRef(null);
 
@@ -76,7 +85,56 @@ export default function ContextMenu({
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [onClose]);
 
-    if (!item) return null;
+    const hasBlankAreaActions = onUploadFile || onUploadFolder || onCreateFolder;
+
+    // Menu vùng trống không có `item` để làm mốc ẩn/hiện, nên phải dựa vào `isOpen`
+    if (!isOpen) return null;
+
+    if (!item && !hasBlankAreaActions) return null;
+
+    // ── Menu cho vùng nền trống: tải tệp/thư mục lên, tạo thư mục mới ──
+    if (!item) {
+        return (
+            <div
+                ref={menuRef}
+                className="fixed z-50 w-60 bg-[#282a2c]/90 backdrop-blur-md text-gray-200 rounded-2xl shadow-2xl py-2 border border-gray-700/80 text-[13px] font-sans select-none animate-fade-in"
+                style={{ top: pos.top, left: pos.left }}
+                onClick={(e) => e.stopPropagation()}
+                onContextMenu={(e) => e.preventDefault()}
+            >
+                <button
+                    onClick={() => { onUploadFile?.(); onClose(); }}
+                    className="w-full px-4 py-2 hover:bg-[#37393b] cursor-pointer flex items-center gap-3 text-gray-200 transition-colors"
+                >
+                    <FileUp className="w-4 h-4 text-blue-400 shrink-0" />
+                    <span>Tải tệp lên</span>
+                </button>
+
+                <button
+                    onClick={() => { onUploadFolder?.(); onClose(); }}
+                    disabled={isBuildingTree}
+                    className="w-full px-4 py-2 hover:bg-[#37393b] disabled:opacity-50 disabled:cursor-wait cursor-pointer flex items-center gap-3 text-gray-200 transition-colors"
+                >
+                    {isBuildingTree ? (
+                        <Loader2 className="w-4 h-4 text-amber-400 animate-spin shrink-0" />
+                    ) : (
+                        <FolderUp className="w-4 h-4 text-amber-400 shrink-0" />
+                    )}
+                    <span>{isBuildingTree ? 'Đang xây cây thư mục...' : 'Tải thư mục lên'}</span>
+                </button>
+
+                <div className="h-px bg-gray-700/60 my-1"></div>
+
+                <button
+                    onClick={() => { onCreateFolder?.(); onClose(); }}
+                    className="w-full px-4 py-2 hover:bg-[#37393b] cursor-pointer flex items-center gap-3 text-gray-200 transition-colors"
+                >
+                    <FolderPlus className="w-4 h-4 text-gray-300 shrink-0" />
+                    <span>Tạo thư mục mới</span>
+                </button>
+            </div>
+        );
+    }
 
     const isFolder = item.type === 'folder';
 
@@ -100,6 +158,7 @@ export default function ContextMenu({
             className="fixed z-50 w-64 bg-[#282a2c]/90 backdrop-blur-md text-gray-200 rounded-2xl shadow-2xl py-2 border border-gray-700/80 text-[13px] font-sans select-none animate-fade-in"
             style={{ top: pos.top, left: pos.left }}
             onClick={(e) => e.stopPropagation()}
+            onContextMenu={(e) => e.preventDefault()}
         >
             {/* Header */}
             <div className="px-4 py-1.5 mb-1 border-b border-gray-700/60 text-xs font-semibold text-gray-400 truncate flex items-center gap-2">

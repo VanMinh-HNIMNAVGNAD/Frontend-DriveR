@@ -15,20 +15,35 @@ export function FileProvider({ children }) {
 
   const [items, setItems] = useState([]);
   
-  let activeTab = 'my-drive';
-  if (location.pathname.includes('/app/home')) activeTab = 'home';
-  else if (location.pathname.includes('/app/shared-drives')) activeTab = 'shared-drives';
-  else if (location.pathname.includes('/app/shared-with-me')) activeTab = 'shared-with-me';
-  else if (location.pathname.includes('/app/recent')) activeTab = 'recent';
-  else if (location.pathname.includes('/app/starred')) activeTab = 'starred';
-  else if (location.pathname.includes('/app/spam')) activeTab = 'spam';
-  else if (location.pathname.includes('/app/trash')) activeTab = 'trash';
-  else if (location.pathname.includes('/app/billing')) activeTab = 'billing';
+  // Chỉ tính lại khi đường dẫn đổi — thứ tự kiểm tra giữ nguyên như bản cũ
+  const activeTab = useMemo(() => {
+    const path = location.pathname;
+    if (path.includes('/app/home')) return 'home';
+    if (path.includes('/app/shared-drives')) return 'shared-drives';
+    if (path.includes('/app/shared-with-me')) return 'shared-with-me';
+    if (path.includes('/app/recent')) return 'recent';
+    if (path.includes('/app/starred')) return 'starred';
+    if (path.includes('/app/spam')) return 'spam';
+    if (path.includes('/app/trash')) return 'trash';
+    if (path.includes('/app/billing')) return 'billing';
+    return 'my-drive';
+  }, [location.pathname]);
 
   const folderMatch = matchPath('/app/:tab/folders/:folderId', location.pathname);
   const currentFolderId = folderMatch ? folderMatch.params.folderId : null;
 
+  const [currentSharedDriveId, setCurrentSharedDriveId] = useState(null);
+
+  useEffect(() => {
+    if (activeTab !== 'shared-drives') {
+      setCurrentSharedDriveId(null);
+    }
+  }, [activeTab]);
+
   const setActiveTab = useCallback((tab) => {
+    if (tab !== 'shared-drives') {
+      setCurrentSharedDriveId(null);
+    }
     navigate(`/app/${tab}`);
   }, [navigate]);
 
@@ -47,6 +62,7 @@ export function FileProvider({ children }) {
       return;
     }
     if (folder.sharedDriveId) {
+      setCurrentSharedDriveId(folder.sharedDriveId);
       navigate(`/app/shared-drives/folders/${folder.id}`);
     } else if (activeTab === 'shared-with-me') {
       navigate(`/app/shared-with-me/folders/${folder.id}`);
@@ -59,6 +75,10 @@ export function FileProvider({ children }) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  const toggleSidebar = useCallback(() => {
+    setIsSidebarCollapsed((prev) => !prev);
+  }, []);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -204,6 +224,7 @@ export function FileProvider({ children }) {
           const response = await filesApi.getFilesAndFolders({
             tab: activeTab,
             folderId: currentFolderId || undefined,
+            sharedDriveId: activeTab === 'shared-drives' && currentSharedDriveId ? currentSharedDriveId : undefined,
             search: debouncedSearch || undefined,
             filterType: filterType !== 'all' ? filterType : undefined,
             filterDate: filterDate !== 'all' ? filterDate : undefined,
@@ -274,7 +295,7 @@ export function FileProvider({ children }) {
 
       await doFetch(retries);
     },
-    [isAuthenticated, isAuthLoading, activeTab, currentFolderId, debouncedSearch, filterType, filterDate, filterOwner, currentPage, pageSize]
+    [isAuthenticated, isAuthLoading, activeTab, currentFolderId, currentSharedDriveId, debouncedSearch, filterType, filterDate, filterOwner, currentPage, pageSize]
   );
 
   useEffect(() => {
@@ -282,13 +303,13 @@ export function FileProvider({ children }) {
     fetchAnalytics();
   }, [fetchFiles, fetchAnalytics]);
 
-  const resetFilters = () => {
+  const resetFilters = useCallback(() => {
     setFilterType('all');
     setFilterDate('all');
     setFilterOwner('all');
     setFilterLocation('all');
     setSearchQuery('');
-  };
+  }, []);
 
   // ── Selection Functions ──
 
@@ -362,8 +383,8 @@ export function FileProvider({ children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items]);
 
-  const folders = items.filter((item) => item.type === 'folder');
-  const files = items.filter((item) => item.type === 'file');
+  const folders = useMemo(() => items.filter((item) => item.type === 'folder'), [items]);
+  const files = useMemo(() => items.filter((item) => item.type === 'file'), [items]);
 
   const sortedFolders = useMemo(() => {
     return [...folders].sort((a, b) => {
@@ -401,7 +422,7 @@ export function FileProvider({ children }) {
   }, [files, sortField, sortDirection]);
 
   // Storage Info Object
-  const storageInfo = {
+  const storageInfo = useMemo(() => ({
     usedBytes: analytics ? analytics.usedBytes : 0,
     usedGB: analytics ? analytics.usedGB : '0.00',
     usedMB: analytics ? (analytics.usedBytes / (1024 * 1024)).toFixed(2) : '0.00',
@@ -409,7 +430,7 @@ export function FileProvider({ children }) {
     totalGB: analytics ? analytics.limitGB : '2.00',
     percentage: analytics ? analytics.percentageUsed : 0,
     categories: analytics?.categories || {},
-  };
+  }), [analytics]);
 
   // Danh sách unique owners từ items hiện tại — dùng cho filter
   const uniqueOwners = useMemo(() => {
@@ -499,6 +520,7 @@ export function FileProvider({ children }) {
       const payload = {
         name: folderName.trim(),
         ...(currentFolderId ? { parentId: currentFolderId } : {}),
+        ...(activeTab === 'shared-drives' && currentSharedDriveId ? { sharedDriveId: currentSharedDriveId } : {}),
       };
       res = await filesApi.createFolder(payload);
     } catch (err) {
@@ -516,19 +538,20 @@ export function FileProvider({ children }) {
     }
 
     return res;
-  }, [currentFolderId, fetchFiles]);
+  }, [currentFolderId, activeTab, currentSharedDriveId, fetchFiles]);
 
   /**
    * Tạo folder im lặng (không trigger loading, không gọi fetchFiles).
    * Dùng khi xây cấu trúc thư mục khi upload folder.
    * @returns {Promise<string|null>} ID của folder vừa tạo
    */
-  const createFolderSilent = useCallback(async (name, parentId) => {
+  const createFolderSilent = useCallback(async (name, parentId, sharedDriveId = (activeTab === 'shared-drives' ? currentSharedDriveId : undefined)) => {
     if (!name || !name.trim()) return null;
     try {
       const payload = {
         name: name.trim(),
         ...(parentId ? { parentId } : {}),
+        ...(sharedDriveId ? { sharedDriveId } : {}),
       };
       const res = await filesApi.createFolder(payload);
       // Backend trả về dạng { id, name, ... } hoặc wrap trong data
@@ -537,7 +560,7 @@ export function FileProvider({ children }) {
       console.error(`Tạo folder "${name}" thất bại:`, err);
       return null; // Không throw — để caller tự xử lý fallback
     }
-  }, []);
+  }, [activeTab, currentSharedDriveId]);
 
   const moveItem = useCallback(async (id, targetParentId) => {
     // 1. Thao tác chính: di chuyển item ở backend
@@ -750,7 +773,7 @@ export function FileProvider({ children }) {
   /** Chunked upload cho file > 10MB — resume được sau khi F5/đóng tab */
   const runChunkedUploadJob = useCallback(
     async (job) => {
-      const { id, fileObj, parentId } = job;
+      const { id, fileObj, parentId, sharedDriveId } = job;
 
       // ── Bước 1: Kiểm tra localStorage có session resume không ──
       let session = loadChunkState(id);
@@ -769,6 +792,7 @@ export function FileProvider({ children }) {
           totalSizeBytes: fileObj.size,
           mimeType: fileObj.type || 'application/octet-stream',
           parentId: parentId || undefined,
+          sharedDriveId: sharedDriveId || undefined,
         });
         ({ resumableUrl, storageKey, chunkSize, totalChunks } = initRes);
         chunksDone = 0;
@@ -785,6 +809,7 @@ export function FileProvider({ children }) {
           totalSizeBytes: fileObj.size,
           mimeType: fileObj.type || 'application/octet-stream',
           parentId: parentId || null,
+          sharedDriveId: sharedDriveId || null,
         });
       }
 
@@ -818,6 +843,7 @@ export function FileProvider({ children }) {
           totalSizeBytes: fileObj.size,
           mimeType: fileObj.type || 'application/octet-stream',
           parentId: parentId || null,
+          sharedDriveId: sharedDriveId || null,
         });
         updateJob(id, { percent: Math.round((chunksDone / totalChunks) * 95) });
       }
@@ -830,6 +856,7 @@ export function FileProvider({ children }) {
         sizeBytes: fileObj.size,
         mimeType: fileObj.type || 'application/octet-stream',
         parentId: parentId || undefined,
+        sharedDriveId: sharedDriveId || undefined,
       });
 
       // Thông báo nếu bị đổi tên
@@ -848,7 +875,7 @@ export function FileProvider({ children }) {
   /** Thực thi upload cho 1 job (phân nhánh: chunked nếu > 10MB, thường nếu nhỏ hơn) */
   const runUploadJob = useCallback(
     async (job) => {
-      const { id, fileObj, parentId, targetProvider } = job;
+      const { id, fileObj, parentId, targetProvider, sharedDriveId } = job;
       updateJob(id, { status: 'uploading', percent: 0 });
 
       try {
@@ -876,6 +903,7 @@ export function FileProvider({ children }) {
             sizeBytes: fileObj.size,
             mimeType: fileObj.type || 'application/octet-stream',
             parentId: parentId || undefined,
+            sharedDriveId: sharedDriveId || undefined,
             targetProvider,
           });
 
@@ -894,6 +922,7 @@ export function FileProvider({ children }) {
             storageKey,
             storageProvider,
             parentId: parentId || undefined,
+            sharedDriveId: sharedDriveId || undefined,
           });
 
           // Backend có thể đổi tên nếu trùng (ví dụ: file.txt → file(1).txt)
@@ -909,9 +938,15 @@ export function FileProvider({ children }) {
 
         // 2. Fallback qua Server Proxy
         if (!isUploaded) {
-          const proxyRes = await storageApi.uploadProxy(fileObj, parentId, targetProvider, (percent) => {
-            updateJob(id, { percent, status: 'uploading' });
-          });
+          const proxyRes = await storageApi.uploadProxy(
+            fileObj,
+            parentId,
+            targetProvider,
+            (percent) => {
+              updateJob(id, { percent, status: 'uploading' });
+            },
+            sharedDriveId,
+          );
 
           // Backend có thể đổi tên nếu trùng
           const savedNameProxy = proxyRes?.file?.name || proxyRes?.name || fileObj.name;
@@ -962,7 +997,7 @@ export function FileProvider({ children }) {
    * parentId: override folder đích (dùng khi upload folder có cấu trúc — mục 3).
    */
   const enqueueUpload = useCallback(
-    (fileObj, parentId = currentFolderId, targetProvider = undefined) => {
+    (fileObj, parentId = currentFolderId, targetProvider = undefined, sharedDriveId = (activeTab === 'shared-drives' ? currentSharedDriveId : undefined)) => {
       if (!fileObj) return;
       const jobId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const job = {
@@ -970,6 +1005,7 @@ export function FileProvider({ children }) {
         fileName: fileObj.name,
         fileObj,
         parentId,
+        sharedDriveId,
         targetProvider,
         percent: 0,
         status: 'pending',
@@ -979,7 +1015,7 @@ export function FileProvider({ children }) {
       pendingQueueRef.current.push(job);
       dispatchRunner();
     },
-    [currentFolderId, dispatchRunner, enqueueJob],
+    [currentFolderId, activeTab, currentSharedDriveId, dispatchRunner, enqueueJob],
   );
 
   /**
@@ -1007,11 +1043,11 @@ export function FileProvider({ children }) {
   const uploadFile = enqueueUpload;
 
   // Backward compatibility alias for UI calls
-  const uploadFileMock = (fileName) => {
+  const uploadFileMock = useCallback((fileName) => {
     const blob = new Blob(['File content test'], { type: 'text/plain' });
     const file = new File([blob], fileName || 'test_document.txt', { type: 'text/plain' });
     enqueueUpload(file);
-  };
+  }, [enqueueUpload]);
 
   const getDownloadUrl = useCallback(async (id) => {
     try {
@@ -1057,105 +1093,151 @@ export function FileProvider({ children }) {
     setCurrentPage(1);
   }, [setCurrentFolderId]);
 
+  const handleSetCurrentSharedDriveId = useCallback((driveId) => {
+    setCurrentSharedDriveId(driveId);
+    setCurrentPage(1);
+  }, []);
+
   const handleSetActiveTab = useCallback((tab) => {
-    if (activeTab === tab && !currentFolderId) return;
+    if (tab !== 'shared-drives') {
+      setCurrentSharedDriveId(null);
+    }
+    if (activeTab === tab && !currentFolderId) {
+      if (tab === 'shared-drives') {
+        setCurrentSharedDriveId(null);
+      }
+      return;
+    }
     setActiveTab(tab);
     setCurrentPage(1);
   }, [activeTab, currentFolderId, setActiveTab]);
 
-  return (
-    <FileContext.Provider
-      value={{
-        items,
-        currentFolderId,
-        setCurrentFolderId: handleSetCurrentFolderId,
-        openFolder,
-        activeTab,
-        setActiveTab: handleSetActiveTab,
-        viewMode,
-        setViewMode,
-        isSidebarCollapsed,
-        setIsSidebarCollapsed,
-        toggleSidebar: () => setIsSidebarCollapsed((prev) => !prev),
-        isLoading,
-        error,
-        triggerReload: fetchFiles,
-        currentPage,
-        setCurrentPage,
-        pageSize,
-        totalItems,
-        totalPages,
-        breadcrumb,
-        searchQuery,
-        setSearchQuery,
-        filterType,
-        setFilterType,
-        filterDate,
-        setFilterDate,
-        sortField,
-        setSortField,
-        sortDirection,
-        setSortDirection,
-        filterOwner,
-        setFilterOwner,
-        filterLocation,
-        setFilterLocation,
-        resetFilters,
-        storageInfo,
-        uniqueOwners,
-        folders: sortedFolders,
+  // Gói toàn bộ context value trong useMemo: identity chỉ đổi khi một trong các
+  // dependency dưới đây thực sự đổi, nhờ đó consumer dùng memo() không re-render vô ích.
+  // Các setter từ useState (setViewMode, setCurrentPage, ...) được React đảm bảo
+  // ổn định vĩnh viễn nên cố tình KHÔNG liệt kê trong mảng dependency.
+  const contextValue = useMemo(() => ({
+    items,
+    currentFolderId,
+    setCurrentFolderId: handleSetCurrentFolderId,
+    currentSharedDriveId,
+    setCurrentSharedDriveId: handleSetCurrentSharedDriveId,
+    openFolder,
+    activeTab,
+    setActiveTab: handleSetActiveTab,
+    viewMode,
+    setViewMode,
+    isSidebarCollapsed,
+    setIsSidebarCollapsed,
+    toggleSidebar,
+    isLoading,
+    error,
+    triggerReload: fetchFiles,
+    currentPage,
+    setCurrentPage,
+    pageSize,
+    totalItems,
+    totalPages,
+    breadcrumb,
+    searchQuery,
+    setSearchQuery,
+    filterType,
+    setFilterType,
+    filterDate,
+    setFilterDate,
+    sortField,
+    setSortField,
+    sortDirection,
+    setSortDirection,
+    filterOwner,
+    setFilterOwner,
+    filterLocation,
+    setFilterLocation,
+    resetFilters,
+    storageInfo,
+    uniqueOwners,
+    folders: sortedFolders,
+    files: sortedFiles,
+    rawFolders: folders,
+    rawFiles: files,
+    currentFilteredItems: items,
+    paginatedItems: items,
+    toggleStar,
+    moveToTrash,
+    restoreFromTrash,
+    deletePermanently,
+    emptyTrash,
+    createFolder,
+    createFolderSilent,
+    moveItem,
+    copyItem,
+    uploadFile,
+    enqueueUpload,
+    retryUploadJob,
+    uploadFileMock,
+    renameItem,
+    getDownloadUrl,
+    getPreviewUrl,
+    getFileTextContent,
+    createShareLink,
+    uploadQueue,
+    infoDrawerItem,
+    isInfoDrawerOpen,
+    infoDrawerTab,
+    openInfoDrawer,
+    closeInfoDrawer,
+    previewItem,
+    openPreview,
+    closePreview,
+    // Selection
+    selectedIds,
+    selectedCount: selectedIds.size,
+    lastSelectedId,
+    toggleSelect,
+    selectRange,
+    selectAll,
+    deselectAll,
+    isSelected,
+    getSelectedItems,
+    // Clipboard (Cut / Copy / Paste)
+    clipboard,
+    isPasting,
+    cutItems,
+    copyItems,
+    clearClipboard,
+    pasteItems,
+  }), [
+    // ── State cơ bản ──
+    items, folders, files, sortedFolders, sortedFiles,
+    isLoading, error, viewMode, isSidebarCollapsed,
+    currentPage, pageSize, totalItems, totalPages, breadcrumb,
+    // ── Điều hướng / tab ──
+    activeTab, currentFolderId, currentSharedDriveId,
+    handleSetActiveTab, handleSetCurrentFolderId, handleSetCurrentSharedDriveId,
+    openFolder, toggleSidebar,
+    // ── Tìm kiếm / lọc / sắp xếp ──
+    searchQuery, filterType, filterDate, filterOwner, filterLocation,
+    sortField, sortDirection, resetFilters, uniqueOwners,
+    // ── Lưu trữ ──
+    storageInfo,
+    // ── Hành động trên file/folder ──
+    fetchFiles, toggleStar, moveToTrash, restoreFromTrash, deletePermanently,
+    emptyTrash, createFolder, createFolderSilent, moveItem, copyItem, renameItem,
+    getDownloadUrl, getPreviewUrl, getFileTextContent, createShareLink,
+    // ── Upload ──
+    uploadQueue, uploadFile, enqueueUpload, retryUploadJob, uploadFileMock,
+    // ── Drawer / preview ──
+    infoDrawerItem, isInfoDrawerOpen, infoDrawerTab, openInfoDrawer, closeInfoDrawer,
+    previewItem, openPreview, closePreview,
+    // ── Selection ──
+    selectedIds, lastSelectedId, toggleSelect, selectRange, selectAll,
+    deselectAll, isSelected, getSelectedItems,
+    // ── Clipboard ──
+    clipboard, isPasting, cutItems, copyItems, clearClipboard, pasteItems,
+  ]);
 
-        files: sortedFiles,
-        rawFolders: folders,
-        rawFiles: files,
-        currentFilteredItems: items,
-        paginatedItems: items,
-        toggleStar,
-        moveToTrash,
-        restoreFromTrash,
-        deletePermanently,
-        emptyTrash,
-        createFolder,
-        createFolderSilent,
-        moveItem,
-        copyItem,
-        uploadFile,
-        enqueueUpload,
-        retryUploadJob,
-        uploadFileMock,
-        renameItem,
-        getDownloadUrl,
-        getPreviewUrl,
-        getFileTextContent,
-        createShareLink,
-        uploadQueue,
-        infoDrawerItem,
-        isInfoDrawerOpen,
-        infoDrawerTab,
-        openInfoDrawer,
-        closeInfoDrawer,
-        previewItem,
-        openPreview,
-        closePreview,
-        // Selection
-        selectedIds,
-        selectedCount: selectedIds.size,
-        lastSelectedId,
-        toggleSelect,
-        selectRange,
-        selectAll,
-        deselectAll,
-        isSelected,
-        getSelectedItems,
-        // Clipboard (Cut / Copy / Paste)
-        clipboard,
-        isPasting,
-        cutItems,
-        copyItems,
-        clearClipboard,
-        pasteItems,
-      }}
-    >
+  return (
+    <FileContext.Provider value={contextValue}>
       {children}
     </FileContext.Provider>
   );

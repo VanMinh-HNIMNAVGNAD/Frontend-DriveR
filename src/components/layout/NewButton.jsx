@@ -12,6 +12,8 @@ export default function NewButton({ isCollapsed }) {
     createFolderSilent,
     enqueueUpload,
     currentFolderId,
+    currentSharedDriveId,
+    activeTab,
     triggerReload,
   } = useFiles();
 
@@ -41,6 +43,10 @@ export default function NewButton({ isCollapsed }) {
 
   const handleCreateFolderPrompt = () => {
     setIsOpen(false);
+    if (activeTab === 'shared-drives' && !currentSharedDriveId && !currentFolderId) {
+      alert('Vui lòng mở một Bộ nhớ dùng chung trước khi tạo thư mục mới.');
+      return;
+    }
     const name = prompt('Nhập tên thư mục mới:', 'Thư mục chưa đặt tên');
     if (name) {
       createFolder(name);
@@ -51,6 +57,12 @@ export default function NewButton({ isCollapsed }) {
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
+    if (activeTab === 'shared-drives' && !currentSharedDriveId && !currentFolderId) {
+      alert('Vui lòng mở một Bộ nhớ dùng chung trước khi tải tệp lên.');
+      e.target.value = '';
+      setIsOpen(false);
+      return;
+    }
     files.forEach((file) => enqueueUpload(file));
     setIsOpen(false);
     e.target.value = '';
@@ -69,6 +81,13 @@ export default function NewButton({ isCollapsed }) {
   const handleFolderChange = async (e) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
+
+    if (activeTab === 'shared-drives' && !currentSharedDriveId && !currentFolderId) {
+      alert('Vui lòng mở một Bộ nhớ dùng chung trước khi tải thư mục lên.');
+      e.target.value = '';
+      setIsOpen(false);
+      return;
+    }
 
     setIsOpen(false);
     e.target.value = '';
@@ -95,9 +114,14 @@ export default function NewButton({ isCollapsed }) {
 
       // --- Bước 3: Tạo hàng loạt folder trên server ---
       let batchFolderIdMap = {};
+      const effectiveSharedDriveId = activeTab === 'shared-drives' ? currentSharedDriveId : undefined;
       if (sortedDirPaths.length > 0) {
         try {
-          batchFolderIdMap = await filesApi.createFoldersBatch(sortedDirPaths, currentFolderId);
+          batchFolderIdMap = await filesApi.createFoldersBatch(
+            sortedDirPaths,
+            currentFolderId,
+            effectiveSharedDriveId,
+          );
         } catch (error) {
           console.error('Lỗi khi tạo hàng loạt thư mục:', error);
           alert('Không thể tạo toàn bộ cấu trúc thư mục, một số tệp có thể bị đặt sai vị trí.');
@@ -113,7 +137,7 @@ export default function NewButton({ isCollapsed }) {
         const parts     = file.webkitRelativePath.split('/');
         const dirPath   = parts.slice(0, -1).join('/'); // '' nếu file ở root folder
         const targetId  = folderIdMap[dirPath] ?? currentFolderId;
-        enqueueUpload(file, targetId);
+        enqueueUpload(file, targetId, undefined, effectiveSharedDriveId);
       });
 
       // --- Bước 5: Refresh để hiện cây folder vừa tạo ---

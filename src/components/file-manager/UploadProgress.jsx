@@ -1,4 +1,6 @@
 import { useState, useMemo, memo, useCallback } from 'react';
+import { useUpload } from '../../context/UploadContext';
+import { useFiles } from '../../context/FileContext';
 import {
     UploadCloud,
     CheckCircle2,
@@ -13,34 +15,39 @@ import {
 
 /**
  * UploadProgress — Hiện progress nhiều file upload song song.
- * Props:
- *   queue: Array<{ id, fileName, percent, status, error? }>
- *         status: 'pending' | 'uploading' | 'confirming' | 'done' | 'error'
- *   onDismissError: (id) => void  — xóa 1 job lỗi khỏi queue
- *   onRetry: (id) => void         — thử lại job lỗi
+ * Tự động kết nối tới UploadContext & FileContext (hoặc nhận qua props nếu có).
  */
-export default memo(function UploadProgress({ queue = [], onDismissError, onRetry }) {
+export default memo(function UploadProgress({ queue, onDismissError, onRetry }) {
+    const { uploadQueue, removeJob, clearQueue } = useUpload();
+    const { retryUploadJob } = useFiles();
+
+    const effectiveQueue = queue !== undefined ? queue : uploadQueue;
+    const handleDismissError = onDismissError || removeJob;
+    const handleRetry = onRetry || retryUploadJob;
+
     const [isMinimized, setIsMinimized] = useState(false);
 
     // Tính toán tổng hợp qua useMemo
     const { totalPercent, activeCount, doneCount, errorCount, pendingCount, allDone } = useMemo(() => {
-        if (queue.length === 0) return { totalPercent: 0, activeCount: 0, doneCount: 0, errorCount: 0, pendingCount: 0, allDone: false };
+        if (!effectiveQueue || effectiveQueue.length === 0) {
+            return { totalPercent: 0, activeCount: 0, doneCount: 0, errorCount: 0, pendingCount: 0, allDone: false };
+        }
         const total = Math.round(
-            queue.reduce((sum, job) => sum + (job.percent || 0), 0) / queue.length,
+            effectiveQueue.reduce((sum, job) => sum + (job.percent || 0), 0) / effectiveQueue.length,
         );
-        const active = queue.filter((j) => j.status === 'uploading' || j.status === 'confirming').length;
-        const done = queue.filter((j) => j.status === 'done').length;
-        const err = queue.filter((j) => j.status === 'error').length;
-        const pending = queue.filter((j) => j.status === 'pending').length;
-        const isAllDone = queue.length > 0 && queue.every((j) => j.status === 'done' || j.status === 'error');
+        const active = effectiveQueue.filter((j) => j.status === 'uploading' || j.status === 'confirming').length;
+        const done = effectiveQueue.filter((j) => j.status === 'done').length;
+        const err = effectiveQueue.filter((j) => j.status === 'error').length;
+        const pending = effectiveQueue.filter((j) => j.status === 'pending').length;
+        const isAllDone = effectiveQueue.length > 0 && effectiveQueue.every((j) => j.status === 'done' || j.status === 'error');
         
         return { totalPercent: total, activeCount: active, doneCount: done, errorCount: err, pendingCount: pending, allDone: isAllDone };
-    }, [queue]);
+    }, [effectiveQueue]);
 
-    if (queue.length === 0) return null;
+    if (!effectiveQueue || effectiveQueue.length === 0) return null;
 
     const headerLabel = allDone
-        ? `Hoàn tất ${doneCount}/${queue.length} tệp${errorCount > 0 ? ` · ${errorCount} lỗi` : ''}`
+        ? `Hoàn tất ${doneCount}/${effectiveQueue.length} tệp${errorCount > 0 ? ` · ${errorCount} lỗi` : ''}`
         : `Đang tải lên ${activeCount > 0 ? `${activeCount} tệp` : ''}${pendingCount > 0 ? ` · ${pendingCount} chờ` : ''}`;
 
     return (
@@ -56,13 +63,22 @@ export default memo(function UploadProgress({ queue = [], onDismissError, onRetr
                 <div className="flex items-center gap-1">
                     <button
                         onClick={() => setIsMinimized(!isMinimized)}
-                        className="p-1 hover:bg-white/10 rounded transition-colors"
+                        className="p-1 hover:bg-white/10 rounded transition-colors text-slate-300 hover:text-white"
                         title={isMinimized ? 'Mở rộng' : 'Thu gọn'}
                     >
                         {isMinimized
                             ? <ChevronUp className="w-4 h-4" />
                             : <ChevronDown className="w-4 h-4" />}
                     </button>
+                    {allDone && (
+                        <button
+                            onClick={clearQueue}
+                            className="p-1 hover:bg-white/10 rounded transition-colors text-slate-300 hover:text-white"
+                            title="Đóng bảng tiến trình"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -88,13 +104,13 @@ export default memo(function UploadProgress({ queue = [], onDismissError, onRetr
             {/* Danh sách từng file */}
             {!isMinimized && (
                 <div className="max-h-64 overflow-y-auto divide-y divide-gray-50">
-                    {queue.map((job) => (
+                    {effectiveQueue.map((job) => (
                         <FileJobRow
                             key={job.id}
                             job={job}
                             jobId={job.id}
-                            onDismissError={onDismissError}
-                            onRetry={onRetry}
+                            onDismissError={handleDismissError}
+                            onRetry={handleRetry}
                         />
                     ))}
                 </div>

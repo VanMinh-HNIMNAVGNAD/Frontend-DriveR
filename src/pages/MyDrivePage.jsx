@@ -1,10 +1,8 @@
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { useFiles } from '../context/FileContext';
-import { useUpload } from '../context/UploadContext';
 import FileListView from '../components/file-manager/FileListView';
 import FileGridView from '../components/file-manager/FileGridView';
 import FileFilterBar from '../components/common/FileFilterBar';
-import UploadProgress from '../components/file-manager/UploadProgress';
 import Breadcrumb from '../components/file-manager/Breadcrumb';
 import { List, LayoutGrid, UploadCloud, FolderInput, Loader2 } from 'lucide-react';
 
@@ -23,21 +21,12 @@ export default function MyDrivePage() {
     setFilterOwner,
     resetFilters,
     uploadFile,
-    uploadQueue,
-    retryUploadJob,
     breadcrumb,
     openFolder,
     clipboard,
     isPasting,
     pasteItems,
   } = useFiles();
-
-  // Subscribe trực tiếp vào UploadContext để lấy removeJob (stable callback, không tạo inline)
-  const { removeJob } = useUpload();
-
-  // Stable callbacks — không phá memo của UploadProgress/FileJobRow
-  const handleDismissError = useCallback((id) => removeJob(id), [removeJob]);
-  const handleRetry = useCallback((id) => retryUploadJob(id), [retryUploadJob]);
 
 
 
@@ -153,13 +142,6 @@ export default function MyDrivePage() {
       <div className="flex-1 overflow-y-auto mt-2">
         {viewMode === 'grid' ? <FileGridView /> : <FileListView />}
       </div>
-
-      {/* Upload Progress — floating bottom-right, multi-file */}
-      <UploadProgress
-        queue={uploadQueue}
-        onDismissError={handleDismissError}
-        onRetry={handleRetry}
-      />
     </div>
   );
 }

@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useFiles } from '../../context/FileContext';
-import { sharingApi } from '../../services/api';
+import { filesApi, sharingApi } from '../../services/api';
 import toast from 'react-hot-toast';
 import FileSkeleton from '../common/FileSkeleton';
 import FolderCard from './FolderCard';
@@ -43,16 +43,34 @@ export default function FileGridView() {
         cutItems,
         copyItems,
         pasteItems,
+        // Upload / tạo thư mục (right-click vùng nền trống)
+        createFolder,
+        enqueueUpload,
+        currentFolderId,
+        currentSharedDriveId,
+        triggerReload,
     } = useFiles();
 
 
     // Context menu state
     const [contextMenu, setContextMenu] = useState({ isOpen: false, x: 0, y: 0, item: null });
+    const [isBuildingTree, setIsBuildingTree] = useState(false);
 
     // Modals state
     const [renameItemTarget, setRenameItemTarget] = useState(null);
     const [shareItemTarget, setShareItemTarget] = useState(null);
     const [geminiItemTarget, setGeminiItemTarget] = useState(null);
+
+    // Hidden inputs cho "Tải tệp lên" / "Tải thư mục lên" từ menu vùng nền trống
+    const fileInputRef = useRef(null);
+    const folderInputRef = useRef(null);
+    const setFolderInputRef = useCallback((el) => {
+        folderInputRef.current = el;
+        if (el) {
+            el.setAttribute('webkitdirectory', '');
+            el.setAttribute('directory', '');
+        }
+    }, []);
 
     const openContextMenu = useCallback((e, item) => {
         e.preventDefault();
@@ -65,9 +83,99 @@ export default function FileGridView() {
         });
     }, []);
 
+    const openBlankContextMenu = useCallback((e) => {
+        e.preventDefault();
+        setContextMenu({
+            isOpen: true,
+            x: e.clientX,
+            y: e.clientY,
+            item: null
+        });
+    }, []);
+
     const closeContextMenu = useCallback(() => {
         setContextMenu({ isOpen: false, x: 0, y: 0, item: null });
     }, []);
+
+    const handleCreateFolderPrompt = useCallback(() => {
+        if (activeTab === 'shared-drives' && !currentSharedDriveId && !currentFolderId) {
+            alert('Vui lòng mở một Bộ nhớ dùng chung trước khi tạo thư mục mới.');
+            return;
+        }
+        const name = prompt('Nhập tên thư mục mới:', 'Thư mục chưa đặt tên');
+        if (name) {
+            createFolder(name);
+        }
+    }, [activeTab, currentSharedDriveId, currentFolderId, createFolder]);
+
+    const handleFileInputChange = useCallback((e) => {
+        const selectedFiles = Array.from(e.target.files || []);
+        e.target.value = '';
+        if (selectedFiles.length === 0) return;
+        if (activeTab === 'shared-drives' && !currentSharedDriveId && !currentFolderId) {
+            alert('Vui lòng mở một Bộ nhớ dùng chung trước khi tải tệp lên.');
+            return;
+        }
+        selectedFiles.forEach((file) => enqueueUpload(file));
+    }, [activeTab, currentSharedDriveId, currentFolderId, enqueueUpload]);
+
+    // Tải folder lên, giữ nguyên cấu trúc thư mục con (giống NewButton.jsx)
+    const handleFolderInputChange = useCallback(async (e) => {
+        const selectedFiles = Array.from(e.target.files || []);
+        e.target.value = '';
+        if (selectedFiles.length === 0) return;
+
+        if (activeTab === 'shared-drives' && !currentSharedDriveId && !currentFolderId) {
+            alert('Vui lòng mở một Bộ nhớ dùng chung trước khi tải thư mục lên.');
+            return;
+        }
+
+        setIsBuildingTree(true);
+        try {
+            const dirPathSet = new Set();
+            selectedFiles.forEach((file) => {
+                const parts = file.webkitRelativePath.split('/');
+                for (let depth = 1; depth < parts.length; depth++) {
+                    dirPathSet.add(parts.slice(0, depth).join('/'));
+                }
+            });
+
+            const sortedDirPaths = Array.from(dirPathSet).sort((a, b) => {
+                const depthA = a.split('/').length;
+                const depthB = b.split('/').length;
+                if (depthA !== depthB) return depthA - depthB;
+                return a.localeCompare(b);
+            });
+
+            let batchFolderIdMap = {};
+            const effectiveSharedDriveId = activeTab === 'shared-drives' ? currentSharedDriveId : undefined;
+            if (sortedDirPaths.length > 0) {
+                try {
+                    batchFolderIdMap = await filesApi.createFoldersBatch(
+                        sortedDirPaths,
+                        currentFolderId,
+                        effectiveSharedDriveId,
+                    );
+                } catch (error) {
+                    console.error('Lỗi khi tạo hàng loạt thư mục:', error);
+                    alert('Không thể tạo toàn bộ cấu trúc thư mục, một số tệp có thể bị đặt sai vị trí.');
+                }
+            }
+
+            const folderIdMap = { '': currentFolderId, ...batchFolderIdMap };
+
+            selectedFiles.forEach((file) => {
+                const parts = file.webkitRelativePath.split('/');
+                const dirPath = parts.slice(0, -1).join('/');
+                const targetId = folderIdMap[dirPath] ?? currentFolderId;
+                enqueueUpload(file, targetId, undefined, effectiveSharedDriveId);
+            });
+
+            triggerReload();
+        } finally {
+            setIsBuildingTree(false);
+        }
+    }, [activeTab, currentSharedDriveId, currentFolderId, enqueueUpload, triggerReload]);
 
     const handleItemDoubleClick = useCallback((item) => {
         if (item.type === 'folder' && !item.isTrash && !item.isSpam) {
@@ -122,8 +230,8 @@ export default function FileGridView() {
 
     if (!currentFilteredItems || currentFilteredItems.length === 0) {
         return (
-            <div 
-                onContextMenu={(e) => e.preventDefault()}
+            <div
+                onContextMenu={openBlankContextMenu}
                 className="flex flex-col items-center justify-center py-20 text-gray-400"
             >
                 <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-3 text-gray-300">
@@ -131,15 +239,34 @@ export default function FileGridView() {
                 </div>
                 <p className="text-base font-medium text-gray-600">Thư mục này chưa có tệp hoặc thư mục nào</p>
                 <p className="text-xs text-gray-400 mt-1">Kéo thả tệp vào đây hoặc nhấn nút "+ Mới" để bắt đầu</p>
+
+                <input type="file" ref={fileInputRef} onChange={handleFileInputChange} multiple className="hidden" aria-label="Chọn nhiều tệp để tải lên" />
+                <input type="file" ref={setFolderInputRef} onChange={handleFolderInputChange} multiple className="hidden" aria-label="Chọn thư mục để tải lên" />
+
+                <ContextMenu
+                    isOpen={contextMenu.isOpen}
+                    x={contextMenu.x}
+                    y={contextMenu.y}
+                    item={contextMenu.item}
+                    isTrashTab={activeTab === 'trash'}
+                    activeTab={activeTab}
+                    onClose={closeContextMenu}
+                    onUploadFile={() => fileInputRef.current?.click()}
+                    onUploadFolder={() => folderInputRef.current?.click()}
+                    onCreateFolder={handleCreateFolderPrompt}
+                    isBuildingTree={isBuildingTree}
+                />
             </div>
         );
     }
 
     return (
-        <div 
-            onContextMenu={(e) => e.preventDefault()}
+        <div
+            onContextMenu={openBlankContextMenu}
             className="flex flex-col h-full justify-between pb-4 select-none"
         >
+            <input type="file" ref={fileInputRef} onChange={handleFileInputChange} multiple className="hidden" aria-label="Chọn nhiều tệp để tải lên" />
+            <input type="file" ref={setFolderInputRef} onChange={handleFolderInputChange} multiple className="hidden" aria-label="Chọn thư mục để tải lên" />
             <div className="space-y-6 overflow-y-auto pr-1">
                 {/* Section 1: Thư mục (Folders) */}
                 {folders && folders.length > 0 && (
@@ -230,6 +357,10 @@ export default function FileGridView() {
                 isTrashTab={activeTab === 'trash'}
                 activeTab={activeTab}
                 onClose={closeContextMenu}
+                onUploadFile={() => fileInputRef.current?.click()}
+                onUploadFolder={() => folderInputRef.current?.click()}
+                onCreateFolder={handleCreateFolderPrompt}
+                isBuildingTree={isBuildingTree}
                 onPreview={(item) => openPreview(item)}
                 onDownload={handleDownloadItem}
                 onRename={(item) => setRenameItemTarget(item)}
