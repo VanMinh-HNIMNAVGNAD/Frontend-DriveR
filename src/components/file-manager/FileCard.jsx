@@ -19,6 +19,7 @@ import {
     MoreVertical, 
     CheckSquare,
     Square,
+    ShieldAlert,
 } from 'lucide-react';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -306,18 +307,30 @@ function FileCard({ file, onDoubleClick, onContextMenu, onStarToggle, onOpenInfo
                     <span className="text-sm font-semibold text-gray-900 truncate" title={file.name}>
                         {file.name}
                     </span>
+                    {/* Ly do bi gan co doi voi tep trong muc Noi dung rac */}
+                    {file.isSpam && (
+                        <span
+                            className="shrink-0 text-amber-600"
+                            title={file.suspiciousReason || 'Tep bi gan co dang ngo'}
+                        >
+                            <ShieldAlert className="w-4 h-4" />
+                        </span>
+                    )}
                 </div>
                 <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100">
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onStarToggle && onStarToggle(file.id);
-                        }}
-                        className="p-1 text-gray-400 hover:text-amber-500 rounded-full hover:bg-white/60 transition-colors"
-                        title={file.isStarred ? 'Bo danh dau sao' : 'Danh dau sao'}
-                    >
-                        <Star className={`w-4 h-4 ${file.isStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
-                    </button>
+                    {/* Tep nguoi khac chia se: cot is_starred thuoc chu so huu nen an nut */}
+                    {!file.isSharedWithMe && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onStarToggle && onStarToggle(file.id);
+                            }}
+                            className="p-1 text-gray-400 hover:text-amber-500 rounded-full hover:bg-white/60 transition-colors"
+                            title={file.isStarred ? 'Bo danh dau sao' : 'Danh dau sao'}
+                        >
+                            <Star className={`w-4 h-4 ${file.isStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
+                        </button>
+                    )}
                     <button
                         onClick={(e) => onContextMenu && onContextMenu(e, file)}
                         className="p-1 text-gray-400 hover:text-gray-700 rounded-full hover:bg-white/60 transition-colors"

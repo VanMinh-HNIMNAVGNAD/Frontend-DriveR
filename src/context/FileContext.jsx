@@ -8,6 +8,36 @@ import { formatBytes } from '../utils/formatFileSize';
 
 const FileContext = createContext();
 
+// Chuẩn hoá 1 item trả về từ API GET /files về đúng shape UI đang dùng.
+// `isSharedWithMe` = true khi item đến từ nguồn "được chia sẻ với tôi",
+// dùng để UI phân biệt tệp của mình với tệp người khác chia sẻ cho mình.
+const formatApiItem = (item, isSharedWithMe = false) => {
+  const base = {
+    ...item,
+    size: Number(item.sizeBytes || 0),
+    createdAt: item.createdAt ? new Date(item.createdAt).toLocaleString('vi-VN') : '',
+    updatedAt: item.updatedAt ? new Date(item.updatedAt).toLocaleString('vi-VN') : '',
+  };
+
+  if (isSharedWithMe) {
+    return {
+      ...base,
+      isSharedWithMe: true,
+      owner: item.sharedOwner?.fullName || 'Người dùng khác',
+      sharedOwner: item.sharedOwner || null,
+      sharedRole: item.sharedRole || 'VIEWER',
+      sharedAt: item.sharedAt
+        ? new Date(item.sharedAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        : '',
+    };
+  }
+
+  return {
+    ...base,
+    owner: 'Tôi',
+  };
+};
+
 export function FileProvider({ children }) {
   const { isAuthenticated, isLoading: isAuthLoading, user } = useAuth();
   const location = useLocation();
@@ -72,7 +102,9 @@ export function FileProvider({ children }) {
   }, [navigate, activeTab]);
 
   const [viewMode, setViewMode] = useState('list');
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  // Dưới 1024px sidebar là lớp phủ (xem SideBar.jsx) nên mặc định phải thu gọn,
+  // nếu không tablet/mobile vừa vào app đã bị lớp phủ che hết nội dung
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => window.innerWidth < 1024);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -208,12 +240,73 @@ export function FileProvider({ children }) {
     }
   }, [isAuthenticated, isAuthLoading]);
 
+  // Trang chủ (activeTab === 'home') không phải 1 tab file thật: nó cần gộp dữ liệu
+  // từ nhiều nguồn để dựng 3 khu vực (Driver riêng của tôi / Đã mở gần đây / Được
+  // chia sẻ với tôi). Thứ tự dưới đây cũng là thứ tự gộp — 'recent' đứng đầu để
+  // danh sách sau khi gộp giữ được thứ tự "mở gần đây nhất" do backend trả về.
+  const HOME_SOURCE_TABS = ['recent', 'my-drive', 'shared-with-me'];
+
+  // Fetch dữ liệu cho Trang chủ: gọi song song các tab hợp lệ của cùng API
+  // GET /files (không thêm endpoint mới), rồi gộp và loại trùng theo id.
+  const fetchHomeItems = useCallback(async () => {
+    if (isAuthLoading || !isAuthenticated) return;
+
+    // Dùng chung bộ đếm request với fetchFiles để response cũ không ghi đè response mới
+    const requestId = ++fetchRequestIdRef.current;
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const responses = await Promise.all(
+        HOME_SOURCE_TABS.map((tab) =>
+          filesApi
+            .getFilesAndFolders({
+              tab,
+              search: debouncedSearch || undefined,
+              page: 1,
+              limit: pageSize,
+            })
+            .catch((err) => {
+              // Một nguồn lỗi không được làm trắng cả Trang chủ
+              console.error(`Lỗi khi tải dữ liệu Trang chủ (tab ${tab}):`, err);
+              return null;
+            }),
+        ),
+      );
+
+      // Nếu có request mới hơn đã được phát đi (vd user vừa chuyển tab), bỏ qua kết quả cũ
+      if (requestId !== fetchRequestIdRef.current) return;
+
+      const mergedById = new Map();
+      responses.forEach((response, index) => {
+        const isSharedSource = HOME_SOURCE_TABS[index] === 'shared-with-me';
+        (response?.items || []).forEach((item) => {
+          // Giữ bản xuất hiện đầu tiên (ưu tiên thứ tự trong HOME_SOURCE_TABS)
+          if (!item || mergedById.has(item.id)) return;
+          mergedById.set(item.id, formatApiItem(item, isSharedSource));
+        });
+      });
+
+      setItems(Array.from(mergedById.values()));
+      setError(responses.every((response) => response === null) ? 'Không thể tải danh sách tệp' : null);
+    } finally {
+      if (requestId === fetchRequestIdRef.current) {
+        setIsLoading(false);
+      }
+    }
+  }, [isAuthenticated, isAuthLoading, debouncedSearch, pageSize]);
+
   // Fetch Files and Folders from Backend API
   const fetchFiles = useCallback(
     async (retries = 1) => {
       // Chờ cho đến khi AuthContext đã resolve xong mới fetch
       if (isAuthLoading || !isAuthenticated) return;
-      if (!VALID_FILE_TABS.includes(activeTab)) return; // Home/Billing không cần danh sách file
+      // Trang chủ đi theo luồng gộp riêng (xem fetchHomeItems) vì cần dữ liệu nhiều tab
+      if (activeTab === 'home') {
+        await fetchHomeItems();
+        return;
+      }
+      if (!VALID_FILE_TABS.includes(activeTab)) return; // Billing không cần danh sách file
 
       const requestId = ++fetchRequestIdRef.current;
       setIsLoading(true);
@@ -237,31 +330,7 @@ export function FileProvider({ children }) {
           if (requestId !== fetchRequestIdRef.current) return;
 
           const rawItems = response.items || [];
-          const formattedItems = rawItems.map((item) => {
-            const base = {
-              ...item,
-              size: Number(item.sizeBytes || 0),
-              createdAt: item.createdAt ? new Date(item.createdAt).toLocaleString('vi-VN') : '',
-              updatedAt: item.updatedAt ? new Date(item.updatedAt).toLocaleString('vi-VN') : '',
-            };
-
-            if (activeTab === 'shared-with-me') {
-              return {
-                ...base,
-                owner: item.sharedOwner?.fullName || 'Người dùng khác',
-                sharedOwner: item.sharedOwner || null,
-                sharedRole: item.sharedRole || 'VIEWER',
-                sharedAt: item.sharedAt
-                  ? new Date(item.sharedAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
-                  : '',
-              };
-            }
-
-            return {
-              ...base,
-              owner: 'Tôi',
-            };
-          });
+          const formattedItems = rawItems.map((item) => formatApiItem(item, activeTab === 'shared-with-me'));
 
           setItems(formattedItems);
           if (response.meta) {
@@ -295,7 +364,7 @@ export function FileProvider({ children }) {
 
       await doFetch(retries);
     },
-    [isAuthenticated, isAuthLoading, activeTab, currentFolderId, currentSharedDriveId, debouncedSearch, filterType, filterDate, filterOwner, currentPage, pageSize]
+    [isAuthenticated, isAuthLoading, activeTab, currentFolderId, currentSharedDriveId, debouncedSearch, filterType, filterDate, filterOwner, currentPage, pageSize, fetchHomeItems]
   );
 
   useEffect(() => {
@@ -739,6 +808,21 @@ export function FileProvider({ children }) {
       // Không can thiệp nếu người dùng đang nhập văn bản trong ô input/textarea
       if (isInputActive) return;
 
+      // Esc = huỷ clipboard đang chờ, cho cả cut VÀ copy. Sau khi copy, clipboard
+      // được giữ lại để dán nhiều lần nên nút "Dán (n)" ở thanh công cụ vẫn hiện —
+      // Esc là cách để tắt nó đi. Xử lý TRƯỚC cờ tắt phím tắt: đây là thao tác huỷ
+      // bỏ, nếu chặn thì người dùng không còn cách nào dẹp nút Dán.
+      if (e.key === 'Escape') {
+        if (clipboardRef.current.items.length > 0) {
+          clearClipboard();
+        }
+        return;
+      }
+
+      // Người dùng có thể tắt phím tắt trong Cài đặt → bỏ qua toàn bộ
+      // (khoá do SettingsModal.jsx ghi: driveR_settings_shortcuts_enabled)
+      if (localStorage.getItem('driveR_settings_shortcuts_enabled') === 'false') return;
+
       const isCtrlOrCmd = e.ctrlKey || e.metaKey;
 
       if (isCtrlOrCmd && (e.key === 'c' || e.key === 'C')) {
@@ -755,10 +839,6 @@ export function FileProvider({ children }) {
         if (clipboardRef.current.items.length > 0 && !isPastingRef.current) {
           e.preventDefault();
           pasteItems();
-        }
-      } else if (e.key === 'Escape') {
-        if (clipboardRef.current.mode === 'cut') {
-          clearClipboard();
         }
       }
     };

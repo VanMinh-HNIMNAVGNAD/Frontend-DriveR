@@ -64,7 +64,7 @@ export default function SharedDrivesPage() {
     if (currentSharedDriveId || currentFolderId) {
         const currentDrive = drives.find((d) => d.id === currentSharedDriveId);
         return (
-            <div className="flex flex-col h-full">
+            <div className="flex flex-col h-full" onContextMenu={(e) => e.preventDefault()}>
                 <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-100">
                     <div className="flex items-center gap-3">
                         <button 

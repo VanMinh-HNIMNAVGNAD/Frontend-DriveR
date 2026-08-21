@@ -75,16 +75,19 @@ function FolderCard({ folder, onDoubleClick, onContextMenu, onStarToggle, isSele
             </div>
 
             <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
-                <button
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        onStarToggle && onStarToggle(folder.id);
-                    }}
-                    className="p-1 text-gray-400 hover:text-amber-500 rounded-full hover:bg-white/60 transition-colors"
-                    title={folder.isStarred ? 'Bo danh dau sao' : 'Danh dau sao'}
-                >
-                    <Star className={`w-4 h-4 ${folder.isStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
-                </button>
+                {/* Tep nguoi khac chia se: cot is_starred thuoc chu so huu nen an nut */}
+                {!folder.isSharedWithMe && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onStarToggle && onStarToggle(folder.id);
+                        }}
+                        className="p-1 text-gray-400 hover:text-amber-500 rounded-full hover:bg-white/60 transition-colors"
+                        title={folder.isStarred ? 'Bo danh dau sao' : 'Danh dau sao'}
+                    >
+                        <Star className={`w-4 h-4 ${folder.isStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
+                    </button>
+                )}
                 <button
                     onClick={(e) => onContextMenu && onContextMenu(e, folder)}
                     className="p-1 text-gray-500 hover:text-gray-800 rounded-full hover:bg-white/60 transition-colors"

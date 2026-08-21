@@ -17,12 +17,48 @@ import {
   Key,
 } from 'lucide-react';
 
+// ── Khoá localStorage cho tab "Cài đặt chung" (lưu phía client, KHÔNG lưu DB) ──
+const LS_THEME = 'driveR_settings_theme';
+const LS_LANGUAGE = 'driveR_settings_language';
+const LS_SHORTCUTS = 'driveR_settings_shortcuts_enabled';
+
+// Khoá dark mode cũ mà RightSideBar.jsx đang dùng — giữ nguyên tên để 2 nơi
+// không sinh ra 2 cơ chế theme xung đột nhau
+const LEGACY_THEME_KEY = 'theme';
+
+/** Đọc lựa chọn theme đã lưu; chưa có thì trả về 'system' */
+function readSavedTheme() {
+  const saved = localStorage.getItem(LS_THEME);
+  if (saved === 'light' || saved === 'dark' || saved === 'system') return saved;
+  // Chưa từng lưu: kế thừa lựa chọn dark mode cũ của RightSideBar.jsx nếu có
+  const legacy = localStorage.getItem(LEGACY_THEME_KEY);
+  return legacy === 'dark' || legacy === 'light' ? legacy : 'system';
+}
+
+/** Quy đổi lựa chọn của người dùng ra giao diện thực tế sẽ hiển thị */
+function resolveTheme(mode) {
+  if (mode === 'system') {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  return mode;
+}
+
+/** Áp dụng class dark lên <html> và đồng bộ khoá cũ cho RightSideBar.jsx */
+function applyTheme(mode) {
+  const resolved = resolveTheme(mode);
+  document.documentElement.classList.toggle('dark', resolved === 'dark');
+  localStorage.setItem(LEGACY_THEME_KEY, resolved);
+}
+
 export default function SettingsModal({ isOpen, onClose }) {
   const [activeTab, setActiveTab] = useState('general');
 
-  // General Settings State
-  const [theme, setTheme] = useState('system'); // 'light' | 'dark' | 'system'
-  const [language, setLanguage] = useState('vi'); // 'vi' | 'en'
+  // General Settings State — đọc từ localStorage ngay lần render đầu (lazy init)
+  const [theme, setTheme] = useState(readSavedTheme); // 'light' | 'dark' | 'system'
+  const [language, setLanguage] = useState(() => {
+    const saved = localStorage.getItem(LS_LANGUAGE); // 'vi' | 'en'
+    return saved === 'vi' || saved === 'en' ? saved : 'vi';
+  });
   const [defaultStartupPage, setDefaultStartupPage] = useState('my-drive'); // 'home' | 'my-drive' | 'recent'
   const [previewBehavior, setPreviewBehavior] = useState('double-click'); // 'auto-play' | 'double-click'
 
@@ -47,12 +83,37 @@ export default function SettingsModal({ isOpen, onClose }) {
     },
   ]);
 
-  // Keyboard Shortcuts State
-  const [shortcutsEnabled, setShortcutsEnabled] = useState(true);
+  // Keyboard Shortcuts State — mặc định bật nếu chưa từng lưu
+  const [shortcutsEnabled, setShortcutsEnabled] = useState(
+    () => localStorage.getItem(LS_SHORTCUTS) !== 'false'
+  );
+
+  // ── Handler: vừa cập nhật state, vừa ghi localStorage để không mất khi F5 ──
+  const handleChangeTheme = (mode) => {
+    setTheme(mode);
+    localStorage.setItem(LS_THEME, mode);
+    applyTheme(mode);
+  };
+
+  const handleChangeLanguage = (value) => {
+    setLanguage(value);
+    localStorage.setItem(LS_LANGUAGE, value);
+  };
+
+  const handleToggleShortcuts = (enabled) => {
+    setShortcutsEnabled(enabled);
+    localStorage.setItem(LS_SHORTCUTS, String(enabled));
+  };
 
   // Feedback Dialog State
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackText, setFeedbackText] = useState('');
+
+  // Áp dụng lại theme đã lưu ngay khi app khởi động — component này mount cùng
+  // Header kể cả lúc modal đang đóng, nên F5 xong giao diện không bị mất lựa chọn
+  useEffect(() => {
+    applyTheme(readSavedTheme());
+  }, []);
 
   const shortcutsList = [
     { key: 'N', label: 'Tạo thư mục mới' },
@@ -175,7 +236,7 @@ export default function SettingsModal({ isOpen, onClose }) {
                   </h3>
                   <div className="grid grid-cols-3 gap-3">
                     <button
-                      onClick={() => setTheme('light')}
+                      onClick={() => handleChangeTheme('light')}
                       className={`flex flex-col items-center gap-2 p-3 rounded-2xl border text-xs font-semibold transition-all ${
                         theme === 'light'
                           ? 'border-blue-600 bg-blue-50/50 text-blue-600'
@@ -187,7 +248,7 @@ export default function SettingsModal({ isOpen, onClose }) {
                     </button>
 
                     <button
-                      onClick={() => setTheme('dark')}
+                      onClick={() => handleChangeTheme('dark')}
                       className={`flex flex-col items-center gap-2 p-3 rounded-2xl border text-xs font-semibold transition-all ${
                         theme === 'dark'
                           ? 'border-blue-600 bg-blue-50/50 text-blue-600'
@@ -199,7 +260,7 @@ export default function SettingsModal({ isOpen, onClose }) {
                     </button>
 
                     <button
-                      onClick={() => setTheme('system')}
+                      onClick={() => handleChangeTheme('system')}
                       className={`flex flex-col items-center gap-2 p-3 rounded-2xl border text-xs font-semibold transition-all ${
                         theme === 'system'
                           ? 'border-blue-600 bg-blue-50/50 text-blue-600'
@@ -217,7 +278,7 @@ export default function SettingsModal({ isOpen, onClose }) {
                   <label className="block text-xs font-bold text-gray-900 mb-2">Ngôn ngữ giao diện</label>
                   <select
                     value={language}
-                    onChange={(e) => setLanguage(e.target.value)}
+                    onChange={(e) => handleChangeLanguage(e.target.value)}
                     className="w-full border border-gray-300 rounded-xl px-3 py-2 text-xs bg-white focus:border-blue-600 outline-none"
                   >
                     <option value="vi">🇻🇳 Tiếng Việt</option>
@@ -397,7 +458,7 @@ export default function SettingsModal({ isOpen, onClose }) {
                   <input
                     type="checkbox"
                     checked={shortcutsEnabled}
-                    onChange={(e) => setShortcutsEnabled(e.target.checked)}
+                    onChange={(e) => handleToggleShortcuts(e.target.checked)}
                     className="w-5 h-5 text-blue-600 rounded-md cursor-pointer"
                   />
                 </div>

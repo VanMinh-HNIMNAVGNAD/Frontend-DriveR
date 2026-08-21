@@ -33,7 +33,7 @@ export default function TrashPage() {
     };
 
     return (
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-full" onContextMenu={(e) => e.preventDefault()}>
             {/* Header */}
             <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">

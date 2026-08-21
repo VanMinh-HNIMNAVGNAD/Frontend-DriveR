@@ -71,7 +71,7 @@ const SectionGrid = ({ itemList, emptyMessage = "Không có mục nào", onItemC
     }
 
     return (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 py-2">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3 py-2">
             {itemList.map((item) => (
                 <div
                     key={item.id}

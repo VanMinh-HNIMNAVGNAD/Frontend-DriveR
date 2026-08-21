@@ -17,13 +17,19 @@ export default function RightSideBar({ isOpen }) {
 
     return (
         <aside className={`transition-all duration-300 ease-in-out flex flex-col items-center bg-[#f8fafd] dark:bg-[#1e1e1e]
-        ${isOpen ? 'w-16 opacity-100 mr-2' : 'w-0 opacity-0 overflow-hidden'}`}>
-            <div className="flex flex-col items-center w-16 pt-3 gap-5">
+        ${isOpen ? 'w-12 lg:w-16 opacity-100 mr-0 lg:mr-2' : 'w-0 opacity-0 overflow-hidden'}`}>
+            <div className="flex flex-col items-center w-12 lg:w-16 pt-3 gap-5">
                 {/* ... Nút Tài khoản và Cài đặt giữ nguyên ... */}
 
                 {/* Nút Toggle Dark Mode */}
                 <button
-                    onClick={() => setIsDarkMode(!isDarkMode)}
+                    onClick={() => {
+                        const next = !isDarkMode;
+                        setIsDarkMode(next);
+                        // Ghi lại lựa chọn rõ ràng sáng/tối để SettingsModal đọc lên
+                        // đúng trạng thái (modal dùng khoá driveR_settings_theme)
+                        localStorage.setItem('driveR_settings_theme', next ? 'dark' : 'light');
+                    }}
                     title={isDarkMode ? "Chế độ sáng" : "Chế độ tối"}
                     className="w-10 h-10 rounded-full text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 flex items-center justify-center transition-colors"
                 >

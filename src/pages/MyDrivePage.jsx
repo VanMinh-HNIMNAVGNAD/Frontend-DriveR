@@ -66,6 +66,7 @@ export default function MyDrivePage() {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className="flex flex-col h-full relative"
+      onContextMenu={(e) => e.preventDefault()}
     >
       {/* Drag & Drop Visual Overlay */}
       {isDragging && (
@@ -91,7 +92,7 @@ export default function MyDrivePage() {
               disabled={isPasting}
               onClick={() => pasteItems()}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-full text-xs font-bold shadow-xs transition-colors cursor-pointer"
-              title={`Dán ${clipboard.items.length} mục vào thư mục này (Ctrl+V)`}
+              title={`Dán ${clipboard.items.length} mục vào thư mục này (Ctrl+V) — Esc để bỏ`}
             >
               {isPasting ? (
                 <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />

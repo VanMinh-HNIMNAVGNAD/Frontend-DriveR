@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Bật dark mode theo class `.dark` trên <html> (Tailwind v4 mặc định chỉ theo
+   prefers-color-scheme của hệ điều hành) — dùng cho lựa chọn Sáng/Tối trong
+   Cài đặt (SettingsModal.jsx) và nút toggle ở RightSideBar.jsx */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer utilities {
   /* Subtle Grid Overlay */
   .bg-grid-pattern {

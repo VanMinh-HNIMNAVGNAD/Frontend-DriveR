@@ -232,7 +232,7 @@ export default function FileGridView() {
         return (
             <div
                 onContextMenu={openBlankContextMenu}
-                className="flex flex-col items-center justify-center py-20 text-gray-400"
+                className="flex flex-col items-center justify-center h-full py-20 text-gray-400"
             >
                 <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-3 text-gray-300">
                     <Folder className="w-8 h-8" />
@@ -275,7 +275,7 @@ export default function FileGridView() {
                             <Folder className="w-4 h-4 text-amber-500" />
                             <span>Thư mục ({folders.length})</span>
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3.5">
+                        <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3.5">
                             {folders.map((folder) => (
                                 <FolderCard
                                     key={folder.id}
@@ -300,7 +300,7 @@ export default function FileGridView() {
                             <FileText className="w-4 h-4 text-blue-500" />
                             <span>Tệp ({files.length})</span>
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                        <div className="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-4">
                             {files.map((file) => (
                                 <FileCard
                                     key={file.id}

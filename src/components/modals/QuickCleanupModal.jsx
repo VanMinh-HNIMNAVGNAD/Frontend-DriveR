@@ -11,7 +11,6 @@ export default function QuickCleanupModal({ isOpen, onClose }) {
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
-    // Quét đệ quy toàn bộ drive (mọi thư mục con) ở backend, không chỉ thư mục đang mở
     filesApi
       .getLargestFiles(3)
       .then((files) => {
@@ -35,7 +34,7 @@ export default function QuickCleanupModal({ isOpen, onClose }) {
     try {
       setIsCleaningTrash(true);
       await emptyTrash();
-      alert('🎉 Đã dọn dẹp sạch Thùng rác! Thu hồi bộ nhớ thành công.');
+      alert('Đã dọn dẹp sạch Thùng rác! Thu hồi bộ nhớ thành công.');
     } catch (err) {
       alert('Lỗi dọn thùng rác: ' + err.message);
     } finally {

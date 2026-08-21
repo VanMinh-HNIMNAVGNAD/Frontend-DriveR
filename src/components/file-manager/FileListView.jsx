@@ -29,7 +29,8 @@ import {
     ArrowDown,
     CheckSquare,
     Square,
-    Minus
+    Minus,
+    ShieldAlert
 } from 'lucide-react';
 
 const getFileTypeLabel = (item) => {
@@ -111,16 +112,24 @@ const FolderTableRow = memo(function FolderTableRow({
             </td>
 
             {/* Star Column – moved after checkbox */}
+            {/* Tệp người khác chia sẻ: cột is_starred thuộc chủ sở hữu nên chỉ hiển
+                thị trạng thái, không cho bấm (backend chặn non-owner) */}
             <td className="py-2.5 px-3 text-center">
-                <button
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleStar(folder.id);
-                    }}
-                    className="text-gray-300 hover:text-amber-400 p-1"
-                >
-                    <Star className={`w-4 h-4 ${folder.isStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
-                </button>
+                {folder.isSharedWithMe ? (
+                    <span className="inline-block p-1 text-gray-200" title="Chỉ chủ sở hữu mới gắn sao được">
+                        <Star className={`w-4 h-4 ${folder.isStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
+                    </span>
+                ) : (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleStar(folder.id);
+                        }}
+                        className="text-gray-300 hover:text-amber-400 p-1"
+                    >
+                        <Star className={`w-4 h-4 ${folder.isStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
+                    </button>
+                )}
             </td>
 
             {/* Name Column */}
@@ -146,7 +155,7 @@ const FolderTableRow = memo(function FolderTableRow({
             </td>
 
             {/* Owner Column */}
-            <td className="py-2.5 px-3 text-gray-700 font-medium truncate max-w-[140px] hidden sm:table-cell">
+            <td className="py-2.5 px-3 text-gray-700 font-medium truncate max-w-[140px] hidden lg:table-cell">
                 {activeTab === 'shared-with-me' && folder.sharedOwner ? (
                     <div className="flex items-center gap-2">
                         {folder.sharedOwner.avatarUrl ? (
@@ -230,17 +239,23 @@ const FileTableRow = memo(function FileTableRow({
                 </button>
             </td>
 
-            {/* Star Column */}
+            {/* Star Column — xem ghi chú ở hàng thư mục */}
             <td className="py-2.5 px-3 text-center">
-                <button
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleStar(file.id);
-                    }}
-                    className="text-gray-300 hover:text-amber-400 p-1"
-                >
-                    <Star className={`w-4 h-4 ${file.isStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
-                </button>
+                {file.isSharedWithMe ? (
+                    <span className="inline-block p-1 text-gray-200" title="Chỉ chủ sở hữu mới gắn sao được">
+                        <Star className={`w-4 h-4 ${file.isStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
+                    </span>
+                ) : (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleStar(file.id);
+                        }}
+                        className="text-gray-300 hover:text-amber-400 p-1"
+                    >
+                        <Star className={`w-4 h-4 ${file.isStarred ? 'fill-amber-400 text-amber-500' : ''}`} />
+                    </button>
+                )}
             </td>
 
             {/* Name Column */}
@@ -250,6 +265,15 @@ const FileTableRow = memo(function FileTableRow({
                     <span className="font-semibold text-gray-900 group-hover:text-blue-600 truncate max-w-[180px]" title={file.name}>
                         {file.name}
                     </span>
+                    {/* Lý do bị gắn cờ do Spam Guard — chỉ tệp trong mục Nội dung rác mới có */}
+                    {file.isSpam && (
+                        <span
+                            className="shrink-0 text-amber-600"
+                            title={file.suspiciousReason || 'Tệp bị gắn cờ đáng ngờ'}
+                        >
+                            <ShieldAlert className="w-4 h-4" />
+                        </span>
+                    )}
                 </div>
             </td>
 
@@ -266,7 +290,7 @@ const FileTableRow = memo(function FileTableRow({
             </td>
 
             {/* Owner Column */}
-            <td className="py-2.5 px-3 text-gray-700 font-medium truncate max-w-[140px] hidden sm:table-cell">
+            <td className="py-2.5 px-3 text-gray-700 font-medium truncate max-w-[140px] hidden lg:table-cell">
                 {activeTab === 'shared-with-me' && file.sharedOwner ? (
                     <div className="flex items-center gap-2">
                         {file.sharedOwner.avatarUrl ? (
@@ -547,7 +571,7 @@ export default function FileListView() {
         return (
             <div
                 onContextMenu={openBlankContextMenu}
-                className="flex flex-col items-center justify-center py-20 text-gray-400 select-none"
+                className="flex flex-col items-center justify-center h-full py-20 text-gray-400 select-none"
             >
                 <FolderOpen className="w-16 h-16 stroke-1 text-gray-300 mb-3" />
                 <p className="text-sm font-medium text-gray-500">Chưa có tệp hoặc thư mục nào ở đây</p>
@@ -582,7 +606,7 @@ export default function FileListView() {
 
             {/* Extended Metadata Table View */}
             <div className="w-full overflow-x-auto rounded-xl border border-gray-100 shadow-2xs bg-white">
-                <table className="w-full text-left border-collapse min-w-[850px]">
+                <table className="w-full text-left border-collapse min-w-[560px] lg:min-w-[850px]">
                     <thead>
                         <tr className="border-b border-gray-200 text-[11px] font-bold text-gray-500 uppercase tracking-wider bg-gray-50/80 select-none">
                             {/* Checkbox Header */}
@@ -644,10 +668,10 @@ export default function FileListView() {
                                 </div>
                             </th>
 
-                            {/* Owner Header (Hidden on Mobile) */}
+                            {/* Owner Header (Hidden on Mobile & Tablet) */}
                             <th
                                 onClick={() => handleSort('owner')}
-                                className="py-3 px-3 font-semibold hover:text-gray-900 cursor-pointer transition-colors hidden sm:table-cell"
+                                className="py-3 px-3 font-semibold hover:text-gray-900 cursor-pointer transition-colors hidden lg:table-cell"
                             >
                                 <div className="flex items-center gap-1">
                                     <span>Owner</span>

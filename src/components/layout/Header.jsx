@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useFiles } from '../../context/FileContext';
+import { filesApi } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import SearchFilterModal from './SearchFilterModal';
@@ -161,8 +162,24 @@ export default function Header({ toggleRightSidebar }) {
         const fileItems = items.filter((i) => i.type !== 'folder');
         const folderItems = items.filter((i) => i.type === 'folder');
 
+        // Có thư mục trong lựa chọn -> gói tất cả (file + toàn bộ cây thư mục con)
+        // thành 1 file ZIP duy nhất do backend nén
         if (folderItems.length > 0) {
-            alert(`Không thể tải xuống thư mục dạng ZIP (chưa hỗ trợ). Chỉ tải ${fileItems.length} tệp.`);
+            try {
+                const zipBlob = await filesApi.downloadZip(items.map((i) => i.id));
+                const blobUrl = URL.createObjectURL(zipBlob);
+                const link = document.createElement('a');
+                link.href = blobUrl;
+                link.download = `driveR_download_${Date.now()}.zip`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(blobUrl);
+            } catch (error) {
+                console.error('Lỗi khi tải ZIP:', error);
+                alert('Tải xuống ZIP thất bại, vui lòng thử lại.');
+            }
+            return;
         }
 
         for (const item of fileItems) {
@@ -210,7 +227,7 @@ export default function Header({ toggleRightSidebar }) {
                         <>
                             <button onClick={handleDeleteSelected} className="flex items-center gap-1.5 px-3 py-2 hover:bg-red-500/90 rounded-lg transition-colors text-sm font-medium cursor-pointer" title="Xóa">
                                 <Trash2 className="w-4 h-4" />
-                                <span className="hidden md:inline">Xóa</span>
+                                <span className="hidden lg:inline">Xóa</span>
                             </button>
                             <button 
                                 onClick={() => {
@@ -220,7 +237,7 @@ export default function Header({ toggleRightSidebar }) {
                                 title="Cắt (Ctrl+X)"
                             >
                                 <Scissors className="w-4 h-4" />
-                                <span className="hidden md:inline">Cắt</span>
+                                <span className="hidden lg:inline">Cắt</span>
                             </button>
                             <button 
                                 onClick={() => {
@@ -230,22 +247,22 @@ export default function Header({ toggleRightSidebar }) {
                                 title="Sao chép (Ctrl+C)"
                             >
                                 <Copy className="w-4 h-4" />
-                                <span className="hidden md:inline">Sao chép</span>
+                                <span className="hidden lg:inline">Sao chép</span>
                             </button>
                             <button onClick={handleDownloadSelected} className="flex items-center gap-1.5 px-3 py-2 hover:bg-white/20 rounded-lg transition-colors text-sm font-medium cursor-pointer" title="Tải xuống">
                                 <Download className="w-4 h-4" />
-                                <span className="hidden md:inline">Tải xuống</span>
+                                <span className="hidden lg:inline">Tải xuống</span>
                             </button>
                         </>
                     ) : (
                         <>
                             <button onClick={handleRestoreSelected} className="flex items-center gap-1.5 px-3 py-2 hover:bg-emerald-500/90 rounded-lg transition-colors text-sm font-medium cursor-pointer" title="Khôi phục">
                                 <RotateCcw className="w-4 h-4" />
-                                <span className="hidden md:inline">Khôi phục</span>
+                                <span className="hidden lg:inline">Khôi phục</span>
                             </button>
                             <button onClick={handlePermanentDeleteSelected} className="flex items-center gap-1.5 px-3 py-2 hover:bg-red-500/90 rounded-lg transition-colors text-sm font-medium cursor-pointer" title="Xóa vĩnh viễn">
                                 <AlertCircle className="w-4 h-4" />
-                                <span className="hidden md:inline">Xóa vĩnh viễn</span>
+                                <span className="hidden lg:inline">Xóa vĩnh viễn</span>
                             </button>
                         </>
                     )}

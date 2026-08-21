@@ -145,12 +145,19 @@ export default function ContextMenu({
     const isEditorInShared = isSharedWithMeTab && sharedRole === 'EDITOR';
 
     // Trong shared-with-me:
-    // VIEWER: chỉ Preview + Download + Star + Hỏi Gemini + Thông tin
-    // EDITOR: thêm Đổi tên. Không có Cắt / Thùng rác
+    // VIEWER: chỉ Preview + Download + Sao chép + Star + Hỏi Gemini + Thông tin
+    // EDITOR: thêm Đổi tên + Cắt (di chuyển trong drive của chủ sở hữu). Không có
+    // Thùng rác / Chia sẻ — hai việc đó vẫn chỉ chủ sở hữu mới làm được.
     const canRename = !isSharedWithMeTab || isEditorInShared;
-    const canCut = !isSharedWithMeTab;
+    const canCut = !isSharedWithMeTab || isEditorInShared;
     const canTrash = !isSharedWithMeTab;
     const canShare = !isSharedWithMeTab; // Chỉ owner mới chia sẻ được
+    // Dán VÀO một thư mục được chia sẻ cần quyền EDITOR — VIEWER bấm vào chỉ nhận 403
+    const canPasteIntoItem = !isSharedWithMeTab || !isFolder || isEditorInShared;
+    // Dấu sao lưu trên chính hàng `files` (cột is_starred) nên nó là dấu sao CỦA CHỦ
+    // SỞ HỮU, không phải của từng người xem. Backend vì thế chỉ cho owner đổi; ẩn nút
+    // đi thay vì để người dùng bấm rồi nhận 403.
+    const canToggleStar = !item.isSharedWithMe;
 
     return (
         <div
@@ -238,16 +245,18 @@ export default function ContextMenu({
                         </div>
                     )}
 
-                    {/* 2.5. Đánh dấu sao */}
-                    <button
-                        onClick={() => { onToggleStar?.(item); onClose(); }}
-                        className="w-full px-4 py-2 hover:bg-[#37393b] cursor-pointer flex items-center justify-between text-gray-200 transition-colors"
-                    >
-                        <div className="flex items-center gap-3">
-                            <Star className={`w-4 h-4 ${item.isStarred ? 'text-amber-400 fill-amber-400' : 'text-gray-300'} shrink-0`} />
-                            <span>{item.isStarred ? 'Bỏ khỏi mục gắn sao' : 'Thêm vào mục gắn sao'}</span>
-                        </div>
-                    </button>
+                    {/* 2.5. Đánh dấu sao — ẩn với tệp được người khác chia sẻ */}
+                    {canToggleStar && (
+                        <button
+                            onClick={() => { onToggleStar?.(item); onClose(); }}
+                            className="w-full px-4 py-2 hover:bg-[#37393b] cursor-pointer flex items-center justify-between text-gray-200 transition-colors"
+                        >
+                            <div className="flex items-center gap-3">
+                                <Star className={`w-4 h-4 ${item.isStarred ? 'text-amber-400 fill-amber-400' : 'text-gray-300'} shrink-0`} />
+                                <span>{item.isStarred ? 'Bỏ khỏi mục gắn sao' : 'Thêm vào mục gắn sao'}</span>
+                            </div>
+                        </button>
+                    )}
 
                     {/* Separator: Clipboard Actions */}
                     <div className="h-px bg-gray-700/60 my-1"></div>
@@ -279,7 +288,7 @@ export default function ContextMenu({
                     </button>
 
                     {/* Dán (Chỉ hiển thị khi có item trong clipboard) */}
-                    {canPaste && (
+                    {canPaste && canPasteIntoItem && (
                         <button
                             disabled={isPasting}
                             onClick={() => { 

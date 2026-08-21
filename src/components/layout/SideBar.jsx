@@ -67,14 +67,14 @@ export default function Sidebar() {
       {/* Mobile Backdrop */}
       {!isSidebarCollapsed && (
         <div 
-          className="md:hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-40 transition-opacity"
+          className="lg:hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-40 transition-opacity"
           onClick={() => toggleSidebar()} 
         />
       )}
       <aside
         className={`bg-[#f8fafd] border-r border-gray-100 flex flex-col pt-3 select-none transition-all duration-300 ease-in-out shrink-0 h-full 
-          fixed md:relative z-50 md:z-0 top-0 left-0
-          ${isSidebarCollapsed ? '-translate-x-full md:translate-x-0 md:w-20 px-2' : 'translate-x-0 w-72 md:w-64 px-3'}
+          fixed lg:relative z-50 lg:z-0 top-0 left-0
+          ${isSidebarCollapsed ? '-translate-x-full lg:translate-x-0 lg:w-20 px-2' : 'translate-x-0 w-72 lg:w-64 px-3'}
         `}
       >
         {/* NÚT + MỚI */}

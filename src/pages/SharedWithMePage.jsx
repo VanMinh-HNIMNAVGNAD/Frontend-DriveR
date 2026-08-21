@@ -25,7 +25,7 @@ export default function SharedWithMePage() {
     } = useFiles();
 
     return (
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-full" onContextMenu={(e) => e.preventDefault()}>
             {/* Header */}
             <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-100">
                 <div className="flex items-center gap-2 flex-1 min-w-0">

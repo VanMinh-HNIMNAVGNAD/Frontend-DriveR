@@ -34,14 +34,14 @@ export default function MainLayout() {
             <Sidebar />
 
             {/* Khu vực nội dung chính */}
-            <div className="flex-1 flex flex-col bg-white overflow-hidden min-w-0 border-l border-gray-200">
+            <div className="flex-1 flex flex-col bg-white overflow-hidden min-w-0 lg:border-l lg:border-gray-200">
                 {/* Header Navbar */}
                 <Header 
                     toggleRightSidebar={() => setIsRightSidebarOpen(!isRightSidebarOpen)} 
                 />
 
                 {/* Body Content */}
-                <main className="flex-1 overflow-hidden px-3 sm:px-5 py-3 relative z-0">
+                <main className="flex-1 overflow-hidden px-3 sm:px-4 lg:px-5 py-3 relative z-0">
                     <Outlet />
                 </main>
             </div>
