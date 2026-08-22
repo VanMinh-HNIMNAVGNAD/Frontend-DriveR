@@ -1,5 +1,4 @@
 import { Routes, Route, useNavigate, Navigate, useLocation } from 'react-router-dom';
-import LandingPage from '../pages/LandingPage';
 import LoginPage from '../pages/LoginPage';
 import RegisterPage from '../pages/RegisterPage';
 import MainLayout from '../components/layout/MainLayout';
@@ -27,7 +26,7 @@ export default function AppRouter() {
 
     return (
         <Routes>
-            <Route path="/" element={<LandingPage onLaunchDrive={() => navigate('/app')} />} />
+            <Route path="/" element={<Navigate to="/app" replace />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
 
@@ -50,7 +49,7 @@ export default function AppRouter() {
                 <Route path="billing" element={<BillingAndQuota />} />
             </Route>
 
-            <Route path="*" element={<PageNotFound onGoHome={() => navigate('/')} />} />
+            <Route path="*" element={<PageNotFound onGoHome={() => navigate('/app')} />} />
         </Routes>
     );
 }
